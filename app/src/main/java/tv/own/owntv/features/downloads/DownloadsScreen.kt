@@ -14,15 +14,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -58,6 +63,7 @@ fun DownloadsScreen(
 
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val selFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val firstFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     // Returning from the player: scroll to and focus the download you just played.
     LaunchedEffect(restoreFocus, downloads.size) {
         if (!restoreFocus || downloads.isEmpty()) return@LaunchedEffect
@@ -72,6 +78,11 @@ fun DownloadsScreen(
 
     Column(
         modifier = modifier.fillMaxSize().background(colors.surface)
+            // Route spatial D-pad entries to the first download row (entry from the sidebar would
+            // otherwise land on whatever row is horizontally aligned). onEnter fires only for
+            // directional entry from outside (internal moves don't re-trigger it).
+            .focusProperties { onEnter = { runCatching { firstFocus.requestFocus() } } }
+            .focusGroup()
             .onFocusChanged { if (it.hasFocus) onChildFocused() }
             .padding(horizontal = Dimens.ScreenPaddingH, vertical = Dimens.ScreenPaddingV),
     ) {
@@ -86,10 +97,14 @@ fun DownloadsScreen(
             }
         } else {
             LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.focusGroup()) {
-                items(downloads, key = { it.id }) { d ->
+                itemsIndexed(downloads, key = { _, d -> d.id }) { index, d ->
                     DownloadRow(
                         download = d,
-                        focusModifier = if (d.id == lastPlayedId) Modifier.focusRequester(selFocus) else Modifier,
+                        focusModifier = when {
+                            d.id == lastPlayedId -> Modifier.focusRequester(selFocus)
+                            index == 0 -> Modifier.focusRequester(firstFocus)
+                            else -> Modifier
+                        },
                         onPlay = { vm.play(d); onFullscreen() },
                         onRetry = { vm.retry(d) },
                         onPause = { vm.pause(d) },

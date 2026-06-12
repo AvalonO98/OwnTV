@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import tv.own.owntv.core.customize.CustomizationStore
+import tv.own.owntv.core.customize.CustomizeKeys
 import tv.own.owntv.core.database.dao.ChannelDao
 import tv.own.owntv.core.database.dao.HistoryDao
 import tv.own.owntv.core.database.dao.MovieDao
@@ -48,6 +50,7 @@ class SearchViewModel(
     private val historyDao: HistoryDao,
     private val sourceDao: SourceDao,
     private val settings: SettingsRepository,
+    private val customize: CustomizationStore,
     val player: OwnTVPlayer,
 ) : ViewModel() {
 
@@ -81,8 +84,12 @@ class SearchViewModel(
 
     private suspend fun search(q: String): SearchResults {
         val ids = ctx.value.sourceIds.ifEmpty { return SearchResults() }
+        // Respect this profile's customizations: hidden channels never surface, renames are shown.
+        val cust = customize.observe(ctx.value.profileId, MediaType.LIVE).first()
         return SearchResults(
-            channels = channelDao.searchList(q, ids, LIMIT),
+            channels = channelDao.searchList(q, ids, LIMIT)
+                .filter { CustomizeKeys.channel(it) !in cust.hiddenItems }
+                .map { ch -> cust.itemNames[CustomizeKeys.channel(ch)]?.let { ch.copy(name = it) } ?: ch },
             movies = movieDao.searchList(q, ids, LIMIT),
             series = seriesDao.searchList(q, ids, LIMIT),
         )

@@ -54,10 +54,14 @@ class ProfilesViewModel(
         }
     }
 
-    /** Apply edits from the editor dialog. [pin] == null leaves the existing PIN unchanged. */
+    /** Apply edits from the editor dialog. [pin]: null = keep the existing PIN, "" = remove it. */
     fun edit(profile: ProfileEntity, name: String, avatarId: Int, isKids: Boolean, pin: String?) {
         viewModelScope.launch {
-            val pinHash = if (pin == null) profile.pinHash else Pin.hash(pin)
+            val pinHash = when {
+                pin == null -> profile.pinHash
+                pin.isEmpty() -> null
+                else -> Pin.hash(pin)
+            }
             profileDao.update(profile.copy(name = name.ifBlank { profile.name }, avatarId = avatarId, isKids = isKids, pinHash = pinHash))
         }
     }

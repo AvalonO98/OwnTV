@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -29,7 +32,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.androidx.compose.koinViewModel
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import tv.own.owntv.core.database.entity.ChannelEntity
 import tv.own.owntv.core.database.entity.EpgProgrammeEntity
 import tv.own.owntv.ui.components.ErrorState
 import tv.own.owntv.ui.components.FocusableSurface
@@ -46,6 +53,7 @@ import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.OwnTVSpinner
+import tv.own.owntv.ui.components.SearchBar
 import tv.own.owntv.ui.theme.OwnTVTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -65,21 +73,87 @@ private fun minutesWide(fromMs: Long, toMs: Long): Dp = (((toMs - fromMs) / 60_0
  * the whole guide in lock-step. Picking a programme opens its details.
  */
 @Composable
-fun EpgScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun EpgScreen(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    onFullscreen: () -> Unit = {},
+    restoreFocus: Boolean = false,
+    onRestored: () -> Unit = {},
+) {
     val vm: EpgViewModel = koinViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
     val colors = OwnTVTheme.colors
     val hScroll = rememberScrollState()
+    val rowListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val firstCell = remember { FocusRequester() }
-    var detail by remember { mutableStateOf<Pair<String, EpgProgrammeEntity>?>(null) }
+    val tunedCell = remember { FocusRequester() }
+    var detail by remember { mutableStateOf<Pair<ChannelEntity, EpgProgrammeEntity>?>(null) }
+    // The pending focus target onEnter routes to: our own restore requests cross into this group
+    // from outside, so onEnter must cooperate or it would hijack them to the first channel.
+    var pendingEnter by remember { mutableStateOf<FocusRequester?>(null) }
 
-    BackHandler { onBack() }
+    // No BackHandler here: the Guide is a top-level section, so Back is the shell's job (content →
+    // sidebar → exit dialog). A screen-level handler would swallow Back forever and block app exit.
     LaunchedEffect(Unit) { vm.load() } // reload from DB each time the guide is opened
-    LaunchedEffect(state.rows.isNotEmpty()) {
-        if (state.rows.isNotEmpty()) { kotlinx.coroutines.delay(80); runCatching { firstCell.requestFocus() } }
+    LaunchedEffect(state.loading, state.channels.isNotEmpty()) {
+        // Auto-focus the grid once it's actually composed (while state.loading the spinner branch
+        // shows instead, so the cells aren't attached yet) — but never while typing a search, and
+        // never when returning from playback (the tuned-channel restore below handles that).
+        if (!state.loading && state.channels.isNotEmpty() && query.isBlank() && !restoreFocus) {
+            kotlinx.coroutines.delay(80)
+            // tunedCell fallback: when the last-tuned channel IS row 0, firstCell isn't attached.
+            if (runCatching { firstCell.requestFocus() }.isFailure) runCatching { tunedCell.requestFocus() }
+        }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(colors.surface).padding(horizontal = 32.dp, vertical = 24.dp)) {
+    // Back from a channel tuned in the guide: scroll to and refocus that channel's row. Must wait
+    // for the reload (vm.load() runs on every mount) — while state.loading the grid isn't composed
+    // at all (spinner branch), so a requestFocus would silently fail and burn the restore flag.
+    LaunchedEffect(restoreFocus, state.loading, state.channels.size) {
+        if (!restoreFocus || state.loading || state.channels.isEmpty()) return@LaunchedEffect
+        val idx = vm.lastTunedChannelId?.let { id -> state.channels.indexOfFirst { it.id == id } } ?: -1
+        val target = if (idx >= 0) tunedCell else firstCell
+        if (idx >= 0) runCatching { rowListState.scrollToItem(idx) }
+        pendingEnter = target
+        kotlinx.coroutines.delay(80)
+        runCatching { target.requestFocus() }
+        onRestored()
+    }
+
+    // Closing the programme-detail dialog: put focus back into the guide (it would otherwise die
+    // with the dialog and fall to the sidebar).
+    var hadDetail by remember { mutableStateOf(false) }
+    LaunchedEffect(detail) {
+        if (detail != null) {
+            hadDetail = true
+        } else if (hadDetail) {
+            hadDetail = false
+            pendingEnter = firstCell
+            kotlinx.coroutines.delay(80)
+            runCatching { firstCell.requestFocus() }
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.surface)
+            // Entry from the sidebar lands on the first channel — unless a restore is pending
+            // (back from playback / dialog close), which onEnter routes to instead of hijacking.
+            // onEnter only fires for entries from OUTSIDE the group — search bar / refresh / back
+            // are inside it, so moving up from the grid to them never re-triggers this.
+            .focusProperties {
+                onEnter = {
+                    val target = pendingEnter ?: firstCell
+                    pendingEnter = null
+                    // tunedCell fallback: when the last-tuned channel IS row 0, firstCell isn't attached.
+                    if (runCatching { target.requestFocus() }.isFailure) runCatching { tunedCell.requestFocus() }
+                }
+            }
+            .focusGroup()
+            .padding(horizontal = 32.dp, vertical = 24.dp),
+    ) {
         // Header: back + title + date + refresh
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FocusableSurface(onClick = onBack, modifier = Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), contentAlignment = Alignment.Center) { _ ->
@@ -102,16 +176,27 @@ fun EpgScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 )
             }
         }
-        Spacer(Modifier.height(16.dp))
+        if (state.stats != null) {
+            Spacer(Modifier.height(4.dp))
+            Text(state.stats!!, style = MaterialTheme.typography.labelLarge, color = colors.primary)
+        }
+        Spacer(Modifier.height(10.dp))
+        SearchBar(
+            query = query,
+            onQueryChange = vm::setQuery,
+            placeholder = "Search guide channels…",
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(12.dp))
 
         when {
             state.loading -> CenterBox { OwnTVSpinner(sizeDp = 56) }
-            state.refreshing && state.rows.isEmpty() -> CenterBox {
+            state.refreshing && state.channels.isEmpty() -> CenterBox {
                 OwnTVSpinner(sizeDp = 44)
                 Spacer(Modifier.height(16.dp))
                 Text("Downloading guide…", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
             }
-            state.isError && state.rows.isEmpty() -> CenterBox {
+            state.isError && state.channels.isEmpty() -> CenterBox {
                 val retry: (() -> Unit)? = if (state.canRefresh) ({ vm.refresh() }) else null
                 ErrorState(
                     title = "Couldn't load the guide",
@@ -120,7 +205,7 @@ fun EpgScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     onRetry = retry,
                 )
             }
-            state.rows.isEmpty() -> CenterBox {
+            state.channels.isEmpty() -> CenterBox {
                 Text(state.message ?: "No guide.", style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
                 if (state.canRefresh) {
                     Spacer(Modifier.height(20.dp))
@@ -147,71 +232,114 @@ fun EpgScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 }
                 Spacer(Modifier.height(8.dp))
 
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(state.rows, key = { it.channel.id }) { row ->
-                        val rowIndex = state.rows.indexOf(row)
-                        Row {
-                            // Pinned channel label
-                            Box(
-                                modifier = Modifier.width(CHANNEL_COL).height(ROW_HEIGHT).padding(end = 6.dp)
-                                    .clip(RoundedCornerShape(10.dp)).background(colors.surfaceContainerHigh).padding(horizontal = 12.dp),
-                                contentAlignment = Alignment.CenterStart,
-                            ) {
-                                Text(
-                                    row.channel.number?.let { "$it  ${row.channel.name}" } ?: row.channel.name,
-                                    style = MaterialTheme.typography.titleSmall, color = colors.onSurface,
-                                    maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            // Scrollable programme strip (shared hScroll)
-                            Row(Modifier.horizontalScroll(hScroll)) {
-                                ProgrammeStrip(
-                                    row = row,
-                                    windowStart = state.windowStart,
-                                    windowEnd = state.windowEnd,
-                                    now = state.now,
-                                    firstCellFocus = if (rowIndex == 0) firstCell else null,
-                                    onOpen = { detail = row.channel.name to it },
-                                )
-                            }
-                        }
+                LazyColumn(state = rowListState, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    itemsIndexed(state.channels, key = { _, ch -> ch.id }) { index, channel ->
+                        GuideChannelRow(
+                            vm = vm,
+                            channel = channel,
+                            windowStart = state.windowStart,
+                            windowEnd = state.windowEnd,
+                            now = state.now,
+                            hScroll = hScroll,
+                            labelFocus = when {
+                                channel.id == vm.lastTunedChannelId -> tunedCell
+                                index == 0 -> firstCell
+                                else -> null
+                            },
+                            onTune = { vm.play(channel); onFullscreen() },
+                            onOpen = { detail = channel to it },
+                        )
                     }
                 }
             }
         }
     }
 
-    detail?.let { (channelName, p) ->
-        ProgrammeDetailDialog(channelName = channelName, programme = p, onDismiss = { detail = null })
+    detail?.let { (channel, p) ->
+        ProgrammeDetailDialog(
+            channelName = channel.name,
+            programme = p,
+            onWatch = { detail = null; vm.play(channel); onFullscreen() },
+            onDismiss = { detail = null },
+        )
+    }
+}
+
+/**
+ * One guide row: pinned tunable channel label + lazily loaded programme strip. Programmes are fetched
+ * from the DB only when the row scrolls into view (indexed query + VM cache), so the guide can list
+ * every channel without holding the whole day's data in memory.
+ */
+@Composable
+private fun GuideChannelRow(
+    vm: EpgViewModel,
+    channel: ChannelEntity,
+    windowStart: Long,
+    windowEnd: Long,
+    now: Long,
+    hScroll: androidx.compose.foundation.ScrollState,
+    labelFocus: FocusRequester?,
+    onTune: () -> Unit,
+    onOpen: (EpgProgrammeEntity) -> Unit,
+) {
+    val colors = OwnTVTheme.colors
+    // Cache peek as the initial value → rows scrolled back into view render instantly, no flash.
+    val programmes by produceState(initialValue = vm.cachedProgrammes(channel), channel.id, windowStart) {
+        if (value == null) value = vm.programmesFor(channel)
+    }
+    Row {
+        // Pinned channel label — press OK to tune straight to the channel.
+        FocusableSurface(
+            onClick = onTune,
+            modifier = Modifier.width(CHANNEL_COL).height(ROW_HEIGHT).padding(end = 6.dp)
+                .then(if (labelFocus != null) Modifier.focusRequester(labelFocus) else Modifier),
+            shape = RoundedCornerShape(10.dp),
+            unfocusedContainerColor = colors.surfaceContainerHigh,
+            contentAlignment = Alignment.CenterStart,
+        ) { focused ->
+            Text(
+                channel.number?.let { "$it  ${channel.name}" } ?: channel.name,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (focused) colors.primary else colors.onSurface,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        }
+        // Scrollable programme strip (shared hScroll); full-width placeholder while loading keeps
+        // every row the same total width so the lock-step scroll stays aligned.
+        Row(Modifier.horizontalScroll(hScroll)) {
+            val progs = programmes
+            if (progs == null) {
+                Spacer(Modifier.width(minutesWide(windowStart, windowEnd)).height(ROW_HEIGHT))
+            } else {
+                ProgrammeStrip(progs, windowStart, windowEnd, now, onOpen)
+            }
+        }
     }
 }
 
 /** Lays a channel's programmes end-to-end across the window, with gap/trailing spacers so every row is the same total width (keeping the shared scroll aligned). */
 @Composable
 private fun ProgrammeStrip(
-    row: GuideRow,
+    programmes: List<EpgProgrammeEntity>,
     windowStart: Long,
     windowEnd: Long,
     now: Long,
-    firstCellFocus: FocusRequester?,
     onOpen: (EpgProgrammeEntity) -> Unit,
 ) {
     var cursor = windowStart
-    var firstUsed = false
-    row.programmes.forEach { p ->
+    programmes.forEach { p ->
         val start = p.startMs.coerceIn(windowStart, windowEnd)
         val stop = p.stopMs.coerceIn(windowStart, windowEnd)
         if (stop <= cursor) return@forEach
         if (start > cursor) { Spacer(Modifier.width(minutesWide(cursor, start))); cursor = start }
         val isNow = now in p.startMs until p.stopMs
-        val fr = if (!firstUsed) firstCellFocus else null
-        firstUsed = true
         ProgrammeCell(
             title = p.title,
             timeLabel = "${clock(p.startMs)} – ${clock(p.stopMs)}",
             width = minutesWide(start, stop),
             isNow = isNow,
-            focusRequester = fr,
+            focusRequester = null,
             onClick = { onOpen(p) },
         )
         cursor = stop
@@ -257,7 +385,7 @@ private fun ProgrammeCell(
 }
 
 @Composable
-private fun ProgrammeDetailDialog(channelName: String, programme: EpgProgrammeEntity, onDismiss: () -> Unit) {
+private fun ProgrammeDetailDialog(channelName: String, programme: EpgProgrammeEntity, onWatch: () -> Unit, onDismiss: () -> Unit) {
     val colors = OwnTVTheme.colors
     val fr = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
@@ -274,8 +402,10 @@ private fun ProgrammeDetailDialog(channelName: String, programme: EpgProgrammeEn
                 Text(programme.description!!, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
             }
             Spacer(Modifier.height(24.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                OwnTVButton("Close", onClick = onDismiss, modifier = Modifier.focusRequester(fr))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OwnTVButton("Close", onClick = onDismiss, style = OwnTVButtonStyle.SECONDARY)
+                Spacer(Modifier.weight(1f))
+                OwnTVButton("Watch channel", onClick = onWatch, icon = OwnTVIcon.PLAY, modifier = Modifier.focusRequester(fr))
             }
         }
     }

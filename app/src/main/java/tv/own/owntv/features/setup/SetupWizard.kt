@@ -49,7 +49,7 @@ import tv.own.owntv.ui.components.StorageBrowser
 import tv.own.owntv.ui.components.formatCount
 import tv.own.owntv.ui.theme.OwnTVTheme
 
-private enum class Step { WELCOME, DISCLAIMER, CREATE_PROFILE, ADD_CONTENT, ADD_SOURCE, IMPORTING, EXISTING, IMPORT_BACKUP }
+private enum class Step { WELCOME, DISCLAIMER, SETUP_CHOICE, CREATE_PROFILE, ADD_CONTENT, ADD_SOURCE, IMPORTING, EXISTING, IMPORT_BACKUP }
 
 /**
  * Onboarding for one profile. [firstRun] shows the welcome/disclaimer; otherwise it starts at profile
@@ -64,6 +64,8 @@ fun Onboarding(firstRun: Boolean, onDone: () -> Unit, onCancel: () -> Unit, modi
     var existing by remember { mutableStateOf<List<SourceEntity>>(emptyList()) }
     // Where "Try Again" returns to when an import fails (new source vs. linking existing).
     var importOrigin by remember { mutableStateOf(Step.ADD_SOURCE) }
+    // Where Back from the backup-restore picker returns to (first-run choice vs. add-content step).
+    var backupOrigin by remember { mutableStateOf(Step.ADD_CONTENT) }
 
     // Refresh the "existing playlists" availability whenever we land on the add-content step.
     LaunchedEffect(step) { if (step == Step.ADD_CONTENT) existing = runCatching { vm.availableExistingSources() }.getOrDefault(emptyList()) }
@@ -71,22 +73,29 @@ fun Onboarding(firstRun: Boolean, onDone: () -> Unit, onCancel: () -> Unit, modi
     Box(modifier = modifier.fillMaxSize().background(OwnTVTheme.colors.background)) {
         when (step) {
             Step.WELCOME -> WelcomeScreen(onNext = { step = Step.DISCLAIMER })
-            Step.DISCLAIMER -> DisclaimerScreen(onAgree = { step = Step.CREATE_PROFILE }, onBack = { step = Step.WELCOME })
+            Step.DISCLAIMER -> DisclaimerScreen(onAgree = { step = Step.SETUP_CHOICE }, onBack = { step = Step.WELCOME })
+            // First decision: start fresh or bring everything back from a backup (profiles included —
+            // no point creating a profile first that the restore would replace).
+            Step.SETUP_CHOICE -> SetupChoiceScreen(
+                onCreate = { step = Step.CREATE_PROFILE },
+                onRestore = { backupOrigin = Step.SETUP_CHOICE; step = Step.IMPORT_BACKUP },
+                onBack = { step = Step.DISCLAIMER },
+            )
             Step.CREATE_PROFILE -> ProfileEditorDialog(
                 initial = null,
                 onConfirm = { name, avatar, kids, pin -> vm.createProfile(name, avatar, kids, pin); step = Step.ADD_CONTENT },
-                onDismiss = { if (firstRun) step = Step.DISCLAIMER else onCancel() },
+                onDismiss = { if (firstRun) step = Step.SETUP_CHOICE else onCancel() },
             )
             Step.ADD_CONTENT -> AddContentScreen(
                 hasExisting = existing.isNotEmpty(),
                 onNew = { step = Step.ADD_SOURCE },
                 onExisting = { step = Step.EXISTING },
-                onImport = { step = Step.IMPORT_BACKUP },
+                onImport = { backupOrigin = Step.ADD_CONTENT; step = Step.IMPORT_BACKUP },
                 onSkip = { vm.finish(); onDone() },
             )
             Step.ADD_SOURCE -> AddSourceScreen(
-                onStartXtream = { name, server, user, pass, ua, refresh -> vm.startXtream(name, server, user, pass, ua, refresh); importOrigin = Step.ADD_SOURCE; step = Step.IMPORTING },
-                onStartM3u = { name, url, ua, refresh -> vm.startM3u(name, url, ua, refresh); importOrigin = Step.ADD_SOURCE; step = Step.IMPORTING },
+                onStartXtream = { name, server, user, pass, ua, epg, refresh -> vm.startXtream(name, server, user, pass, ua, epg, refresh); importOrigin = Step.ADD_SOURCE; step = Step.IMPORTING },
+                onStartM3u = { name, url, ua, epg, refresh -> vm.startM3u(name, url, ua, epg, refresh); importOrigin = Step.ADD_SOURCE; step = Step.IMPORTING },
                 onBack = { step = Step.ADD_CONTENT },
             )
             Step.IMPORTING -> ImportProgressScreen(
@@ -104,7 +113,7 @@ fun Onboarding(firstRun: Boolean, onDone: () -> Unit, onCancel: () -> Unit, modi
             Step.IMPORT_BACKUP -> ImportBackupScreen(
                 state = importState,
                 onPick = { file -> vm.importBackup(file) { onDone() } }, // restore activates a profile itself
-                onBack = { vm.reset(); step = Step.ADD_CONTENT },
+                onBack = { vm.reset(); step = backupOrigin },
             )
         }
     }
@@ -143,6 +152,27 @@ private fun DisclaimerScreen(onAgree: () -> Unit, onBack: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OwnTVButton("Back", onClick = onBack, style = OwnTVButtonStyle.SECONDARY)
             OwnTVButton("I Understand", onClick = onAgree, modifier = Modifier.focusRequester(fr))
+        }
+    }
+}
+
+@Composable
+private fun SetupChoiceScreen(onCreate: () -> Unit, onRestore: () -> Unit, onBack: () -> Unit) {
+    val colors = OwnTVTheme.colors
+    val fr = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
+    BackHandler { onBack() }
+    Centered {
+        Text("Set up OwnTV", style = MaterialTheme.typography.headlineLarge, color = colors.onSurface)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Start fresh, or bring back your profiles, playlists and favorites from a backup file.",
+            style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(24.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            ChoiceCard(icon = OwnTVIcon.PERSON, title = "New profile", desc = "Create a profile and add sources", modifier = Modifier.focusRequester(fr), onClick = onCreate)
+            ChoiceCard(icon = OwnTVIcon.DOWNLOADS, title = "Restore backup", desc = "Import profiles & playlists from a file", onClick = onRestore)
         }
     }
 }

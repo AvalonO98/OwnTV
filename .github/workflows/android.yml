@@ -105,10 +105,25 @@ jobs:
           path: dist/${{ env.APK_OUT }}
           if-no-files-found: error
 
+      - name: Extract release notes from CHANGELOG.md
+        if: env.IS_TAG == 'true'
+        run: |
+          # Take the first "## ..." section of CHANGELOG.md (the newest release) as the release body.
+          # The in-app updater shows this text as the "What's new" changelog.
+          if [ -f CHANGELOG.md ]; then
+            awk '/^## /{n++} n==1' CHANGELOG.md > dist/RELEASE_NOTES.md
+          fi
+          if [ ! -s dist/RELEASE_NOTES.md ]; then
+            echo "See CHANGELOG.md for details." > dist/RELEASE_NOTES.md
+          fi
+          echo "--- Release notes ---"
+          cat dist/RELEASE_NOTES.md
+
       - name: Publish GitHub Release
         if: env.IS_TAG == 'true'
         uses: softprops/action-gh-release@v2
         with:
           name: OwnTV ${{ github.ref_name }}
           files: dist/${{ env.APK_OUT }}
+          body_path: dist/RELEASE_NOTES.md
           generate_release_notes: true

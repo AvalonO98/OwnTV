@@ -11,6 +11,8 @@ import androidx.paging.PagingSource
 import androidx.paging.cachedIn
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -25,6 +27,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import tv.own.owntv.core.customize.CustomizationStore
+import tv.own.owntv.core.customize.applyCustomizations
 import tv.own.owntv.core.database.dao.CategoryDao
 import tv.own.owntv.core.database.dao.FavoriteDao
 import tv.own.owntv.core.database.dao.HistoryDao
@@ -34,6 +38,7 @@ import tv.own.owntv.core.database.dao.SourceDao
 import tv.own.owntv.core.database.entity.DownloadEntity
 import tv.own.owntv.core.database.entity.EpisodeEntity
 import tv.own.owntv.core.database.entity.FavoriteEntity
+import tv.own.owntv.core.database.entity.PlaybackProgressEntity
 import tv.own.owntv.core.database.entity.SeriesEntity
 import tv.own.owntv.core.database.entity.WatchHistoryEntity
 import tv.own.owntv.core.model.MediaType
@@ -57,12 +62,26 @@ class SeriesViewModel(
     private val sourceDao: SourceDao,
     private val seriesRepository: SeriesRepository,
     private val settings: SettingsRepository,
+    private val customize: CustomizationStore,
     private val player: OwnTVPlayer,
     private val downloadManager: DownloadManager,
 ) : ViewModel() {
 
     private data class Ctx(val profileId: Long, val sourceIds: List<Long>)
     private val ctx = MutableStateFlow(Ctx(-1L, emptyList()))
+
+    /** List ordering for this section (Provider order vs A–Z), persisted in DataStore. */
+    val sortMode: StateFlow<SettingsRepository.SortMode> = settings.sortSeries
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.SortMode.ALPHA)
+
+    fun toggleSort() {
+        viewModelScope.launch {
+            settings.setSortSeries(
+                if (sortMode.value == SettingsRepository.SortMode.PLAYLIST) SettingsRepository.SortMode.ALPHA
+                else SettingsRepository.SortMode.PLAYLIST,
+            )
+        }
+    }
 
     private val _selected = MutableStateFlow<LiveKey>(LiveKey.All)
     val selectedKey: StateFlow<LiveKey> = _selected.asStateFlow()
@@ -90,26 +109,58 @@ class SeriesViewModel(
             val pid = settings.activeProfileId.first()
             ctx.value = Ctx(pid, sourceDao.sourceIdsForProfile(pid))
         }
+        // Periodically persist the playing episode's resume position (same cadence as movies).
+        // Episodes were previously *read* on play but never saved — resume never actually worked.
+        viewModelScope.launch {
+            while (isActive) {
+                delay(10_000)
+                saveEpisodeProgressNow()
+            }
+        }
+    }
+
+    /** Saves the currently playing episode's position (matched by stream URL, so prev/next in the
+     *  player queue is tracked correctly even though the VM didn't initiate the switch). */
+    fun saveEpisodeProgressNow() {
+        if (player.isLiveContent || !player.isPlaying.value) return
+        val url = player.currentMediaUrl ?: return
+        val ep = episodes.value.firstOrNull { it.streamUrl == url } ?: return
+        val pos = player.position.value
+        val dur = player.duration.value
+        if (pos > 0 && dur > 0) {
+            viewModelScope.launch {
+                progressDao.save(
+                    PlaybackProgressEntity(profileId = ctx.value.profileId, mediaType = MediaType.EPISODE, itemId = ep.id, positionMs = pos, durationMs = dur),
+                )
+            }
+        }
     }
 
     val railItems: StateFlow<List<LiveRailItem>> = ctx
         .flatMapLatest { c ->
             if (c.profileId < 0) flowOf(defaultRail)
-            else categoryDao.observe(c.sourceIds, MediaType.SERIES).map { cats ->
-                defaultRail + cats.map { LiveRailItem(LiveKey.Folder(it.id), it.name.take(3).uppercase(), it.name) }
+            else combine(
+                categoryDao.observe(c.sourceIds, MediaType.SERIES),
+                customize.observe(c.profileId, MediaType.SERIES),
+            ) { cats, cust ->
+                defaultRail + cats.applyCustomizations(cust).map { (cat, name) ->
+                    LiveRailItem(LiveKey.Folder(cat.id), name.take(3).uppercase(), name)
+                }
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, defaultRail)
 
     val series: Flow<PagingData<SeriesEntity>> = combine(
-        _selected, ctx, _search.map { it.trim() }.debounce(300).distinctUntilChanged(),
-    ) { key, c, query -> Triple(key, c, query) }
-        .flatMapLatest { (key, c, query) ->
+        _selected, ctx, _search.map { it.trim() }.debounce(300).distinctUntilChanged(), sortMode,
+    ) { key, c, query, sort -> Args(key, c, query, sort) }
+        .flatMapLatest { (key, c, query, sort) ->
             Pager(PagingConfig(pageSize = 60, prefetchDistance = 30, initialLoadSize = 90, maxSize = 300)) {
-                pagingSource(key, c, query)
+                pagingSource(key, c, query, sort)
             }.flow
         }
         .cachedIn(viewModelScope)
+
+    private data class Args(val key: LiveKey, val ctx: Ctx, val query: String, val sort: SettingsRepository.SortMode)
 
     val count: StateFlow<Int> = combine(_selected, ctx) { key, c -> key to c }
         .flatMapLatest { (key, c) -> countFlow(key, c) }
@@ -143,7 +194,15 @@ class SeriesViewModel(
         _openedSeries.value = null
     }
 
-    fun playEpisode(episode: EpisodeEntity) {
+    /** The user's resume preference (Always / Ask / Never) — the screen drives the prompt. */
+    val resumeMode: StateFlow<SettingsRepository.ResumeMode> = settings.resumeMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.ResumeMode.ASK)
+
+    /** Saved resume position for [episode] (0 when none) — used by the screen to decide the prompt. */
+    suspend fun savedPositionMs(episode: EpisodeEntity): Long =
+        progressDao.get(ctx.value.profileId, MediaType.EPISODE, episode.id)?.positionMs ?: 0
+
+    fun playEpisode(episode: EpisodeEntity, startPositionMs: Long = 0) {
         _lastPlayedEpisodeId.value = episode.id
         viewModelScope.launch {
             val pid = ctx.value.profileId
@@ -152,7 +211,6 @@ class SeriesViewModel(
                 .filter { it.seasonNumber == episode.seasonNumber }
                 .sortedBy { it.episodeNumber }
             val startIndex = seasonEpisodes.indexOfFirst { it.id == episode.id }.coerceAtLeast(0)
-            val saved = progressDao.get(pid, MediaType.EPISODE, episode.id)
             val showName = _openedSeries.value?.name
             player.playEpisodes(
                 items = seasonEpisodes.map { ep ->
@@ -165,7 +223,7 @@ class SeriesViewModel(
                     )
                 },
                 startIndex = startIndex,
-                startPositionMs = saved?.positionMs ?: 0,
+                startPositionMs = startPositionMs,
             )
             historyDao.record(WatchHistoryEntity(profileId = pid, mediaType = MediaType.EPISODE, itemId = episode.id))
             // Also mark the show as recently-watched so it appears under Series → HIS.
@@ -203,13 +261,14 @@ class SeriesViewModel(
         }
     }
 
-    private fun pagingSource(key: LiveKey, c: Ctx, query: String): PagingSource<Int, SeriesEntity> {
+    private fun pagingSource(key: LiveKey, c: Ctx, query: String, sort: SettingsRepository.SortMode): PagingSource<Int, SeriesEntity> {
         val ids = c.sourceIds.ifEmpty { listOf(-1L) }
+        val playlist = sort == SettingsRepository.SortMode.PLAYLIST
         return if (query.isBlank()) when (key) {
-            LiveKey.All -> seriesDao.pagingAll(ids)
+            LiveKey.All -> if (playlist) seriesDao.pagingAllOriginal(ids) else seriesDao.pagingAll(ids)
             LiveKey.Favorites -> seriesDao.pagingFavorites(c.profileId)
             LiveKey.History -> seriesDao.pagingHistory(c.profileId)
-            is LiveKey.Folder -> seriesDao.pagingByCategory(key.id)
+            is LiveKey.Folder -> if (playlist) seriesDao.pagingByCategory(key.id) else seriesDao.pagingByCategoryAlpha(key.id)
         } else when (key) {
             LiveKey.All -> seriesDao.searchAll(query, ids)
             LiveKey.Favorites -> seriesDao.searchFavorites(query, c.profileId)

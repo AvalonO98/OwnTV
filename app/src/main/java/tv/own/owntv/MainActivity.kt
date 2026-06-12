@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.koin.android.ext.android.inject
 import org.koin.androidx.compose.koinViewModel
 import tv.own.owntv.features.profiles.ProfileGate
 import tv.own.owntv.features.profiles.ProfilesViewModel
@@ -27,12 +28,22 @@ import tv.own.owntv.ui.theme.OwnTVTheme
 import tv.own.owntv.ui.theme.UiZoom
 
 class MainActivity : ComponentActivity() {
+    private val player: tv.own.owntv.player.OwnTVPlayer by inject()
+
+    override fun onStop() {
+        super.onStop()
+        // Backgrounded (Home / another app): stop playback and free the demuxer cache + decoder
+        // buffers — holding them while invisible got the process LMK-killed on real TVs.
+        if (!isChangingConfigurations) player.onAppBackgrounded()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             val viewModel: ShellViewModel = koinViewModel()
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             val accent by viewModel.accent.collectAsStateWithLifecycle()
+            val customAccent by viewModel.customAccent.collectAsStateWithLifecycle()
             val uiZoomPercent by viewModel.uiZoomPercent.collectAsStateWithLifecycle()
             val avatarId by viewModel.avatarId.collectAsStateWithLifecycle()
             val profileName by viewModel.profileName.collectAsStateWithLifecycle()
@@ -45,13 +56,18 @@ class MainActivity : ComponentActivity() {
             val profiles by profilesVm.profiles.collectAsStateWithLifecycle()
             var gatePassed by remember { mutableStateOf(false) }
             var addingProfile by remember { mutableStateOf(false) }
+            // A backup restore deletes-then-reinserts profiles, so the list is briefly EMPTY while
+            // the shell is showing — without this, the shell unmounts and remounts, dumping the user
+            // out of Settings → Backup & Restore mid-restore. Only the cold start waits for the load.
+            var everHadProfiles by remember { mutableStateOf(false) }
+            LaunchedEffect(profiles) { if (profiles.isNotEmpty()) everHadProfiles = true }
 
             // "Refresh on startup" — re-sync sources once the active profile is known.
             LaunchedEffect(activeProfileId) {
                 if ((activeProfileId ?: -1L) >= 0L) viewModel.refreshOnStartIfEnabled()
             }
 
-            OwnTVTheme(themeMode = themeMode, accent = accent, systemInDarkTheme = isSystemInDarkTheme()) {
+            OwnTVTheme(themeMode = themeMode, accent = accent, systemInDarkTheme = isSystemInDarkTheme(), customAccent = customAccent) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(base.density * UiZoom.factor(uiZoomPercent), base.fontScale),
@@ -75,7 +91,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxSize(),
                             )
                             // Profiles still loading (≥0 means at least one exists) — avoid a gate/shell flicker.
-                            profiles.isEmpty() -> Unit
+                            profiles.isEmpty() && !everHadProfiles -> Unit
                             // Run 2+: "Who's watching?" — choose a profile or add one.
                             !gatePassed -> ProfileGate(
                                 onEnter = { gatePassed = true },
@@ -86,7 +102,6 @@ class MainActivity : ComponentActivity() {
                                 selectedSection = selectedSection,
                                 onSelectSection = viewModel::selectSection,
                                 themeMode = themeMode,
-                                onCycleTheme = viewModel::cycleTheme,
                                 uiZoomPercent = uiZoomPercent,
                                 onSetZoom = viewModel::setUiZoom,
                                 avatarId = avatarId,

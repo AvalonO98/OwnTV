@@ -44,8 +44,8 @@ private enum class SourceKind { XTREAM, M3U }
 
 @Composable
 fun AddSourceScreen(
-    onStartXtream: (name: String, server: String, user: String, pass: String, userAgent: String, refreshOnStart: Boolean) -> Unit,
-    onStartM3u: (name: String, url: String, userAgent: String, refreshOnStart: Boolean) -> Unit,
+    onStartXtream: (name: String, server: String, user: String, pass: String, userAgent: String, epgUrl: String, refreshOnStart: Boolean) -> Unit,
+    onStartM3u: (name: String, url: String, userAgent: String, epgUrl: String, refreshOnStart: Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     initial: SourceEntity? = null,
@@ -59,6 +59,7 @@ fun AddSourceScreen(
     var username by remember { mutableStateOf(initial?.username ?: "") }
     var password by remember { mutableStateOf(initial?.password ?: "") }
     var m3uUrl by remember { mutableStateOf(if (initial != null && initial.type == SourceType.M3U) initial.url else "") }
+    var epgUrl by remember { mutableStateOf(initial?.epgUrl ?: "") }
     var userAgent by remember { mutableStateOf(initial?.userAgent ?: "") }
     var refreshOnStart by remember { mutableStateOf(initialRefresh) }
     val firstFocus = remember { FocusRequester() }
@@ -86,14 +87,15 @@ fun AddSourceScreen(
             )
             Spacer(Modifier.height(24.dp))
 
-            // Source type selector (locked while editing — the type can't change).
+            // Source type selector (locked while editing — the type can't change, so initial focus
+            // goes to the Name field instead of a dead chip).
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                KindChip("Xtream", kind == SourceKind.XTREAM, Modifier.weight(1f).focusRequester(firstFocus)) { if (!editing) kind = SourceKind.XTREAM }
+                KindChip("Xtream", kind == SourceKind.XTREAM, Modifier.weight(1f).then(if (!editing) Modifier.focusRequester(firstFocus) else Modifier)) { if (!editing) kind = SourceKind.XTREAM }
                 KindChip("M3U / M3U8", kind == SourceKind.M3U, Modifier.weight(1f)) { if (!editing) kind = SourceKind.M3U }
             }
             Spacer(Modifier.height(20.dp))
 
-            OwnTVTextField(name, { name = it }, label = "Name (optional)", placeholder = "My IPTV", modifier = Modifier.fillMaxWidth())
+            OwnTVTextField(name, { name = it }, label = "Name (optional)", placeholder = "My IPTV", modifier = Modifier.fillMaxWidth(), focusRequester = if (editing) firstFocus else null)
             Spacer(Modifier.height(14.dp))
 
             when (kind) {
@@ -110,6 +112,15 @@ fun AddSourceScreen(
             }
 
             Spacer(Modifier.height(14.dp))
+            OwnTVTextField(
+                epgUrl, { epgUrl = it },
+                label = "EPG URL (optional, XMLTV)",
+                placeholder = if (kind == SourceKind.XTREAM) "blank uses the server's xmltv.php" else "blank uses the playlist's url-tvg",
+                keyboardType = KeyboardType.Uri,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(14.dp))
             OwnTVTextField(userAgent, { userAgent = it }, label = "User-Agent (optional)", placeholder = "e.g. VLC/3.0.20 LibVLC/3.0.20", modifier = Modifier.fillMaxWidth())
 
             Spacer(Modifier.height(16.dp))
@@ -123,8 +134,8 @@ fun AddSourceScreen(
                     label = if (editing) "Save" else "Start Import",
                     onClick = {
                         when (kind) {
-                            SourceKind.XTREAM -> onStartXtream(name, server, username, password, userAgent, refreshOnStart)
-                            SourceKind.M3U -> onStartM3u(name, m3uUrl, userAgent, refreshOnStart)
+                            SourceKind.XTREAM -> onStartXtream(name, server, username, password, userAgent, epgUrl, refreshOnStart)
+                            SourceKind.M3U -> onStartM3u(name, m3uUrl, userAgent, epgUrl, refreshOnStart)
                         }
                     },
                     enabled = canStart,

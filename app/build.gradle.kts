@@ -20,7 +20,9 @@ android {
         // CI injects these from the git tag (see .github/workflows/android.yml) so releases never
         // need a manual edit here. The fallbacks are only used for local/debug builds.
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
-        versionName = System.getenv("VERSION_NAME") ?: "1.0.0"
+        // Keep the fallback at the latest released version, or local debug builds will see the
+        // in-app updater offer them the release as an "update".
+        versionName = System.getenv("VERSION_NAME") ?: "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

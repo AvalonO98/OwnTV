@@ -26,7 +26,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.koinInject
+import tv.own.owntv.core.update.UpdateManager
+import tv.own.owntv.features.update.UpdateStatusToast
 import tv.own.owntv.features.downloads.DownloadsScreen
 import tv.own.owntv.features.epg.EpgScreen
 import tv.own.owntv.features.live.LiveScreen
@@ -67,7 +70,6 @@ fun OwnTVShell(
     selectedSection: MainSection,
     onSelectSection: (MainSection) -> Unit,
     themeMode: ThemeMode,
-    onCycleTheme: () -> Unit,
     uiZoomPercent: Int,
     onSetZoom: (Int) -> Unit,
     avatarId: Int,
@@ -150,12 +152,9 @@ fun OwnTVShell(
                 when {
                     selectedSection == MainSection.SETTINGS -> SettingsScreen(
                         themeMode = themeMode,
-                        onCycleTheme = onCycleTheme,
                         uiZoomPercent = uiZoomPercent,
                         onSetZoom = onSetZoom,
                         onOpenPlaylist = { /* Phase 6: open setup/playlist */ },
-                        avatarId = avatarId,
-                        onSetAvatar = onSetAvatar,
                         modifier = Modifier
                             .fillMaxSize()
                             .onFocusChanged { if (it.hasFocus) focusedLayer = ShellLayer.CONTENT }
@@ -204,6 +203,9 @@ fun OwnTVShell(
 
                     selectedSection == MainSection.EPG -> EpgScreen(
                         onBack = { runCatching { sidebarFocus.requestFocus() } },
+                        onFullscreen = openFullscreen,
+                        restoreFocus = restoreFocus,
+                        onRestored = { restoreFocus = false },
                         modifier = Modifier
                             .fillMaxSize()
                             .onFocusChanged { if (it.hasFocus) focusedLayer = ShellLayer.CONTENT }
@@ -260,6 +262,8 @@ fun OwnTVShell(
             },
         ) {
             MpvVideoSurface(player = player, modifier = Modifier.fillMaxSize())
+            // Direct render mode: mpv can't draw subtitles on the decoder-owned surface — the app does.
+            if (isFull) tv.own.owntv.player.SubtitleOverlay(player = player, modifier = Modifier.fillMaxSize())
             if (isFull) {
                 PlayerHud(
                     player = player,
@@ -282,6 +286,27 @@ fun OwnTVShell(
                 onSelect = onSetAvatar,
                 onDismiss = { showAvatarPicker = false },
             )
+        }
+
+        // Automatic update check (GitHub Releases) shortly after launch, once per session: a small
+        // top-right status card shows "Checking… / up to date" (auto-hides) or stays with
+        // Update now / Later when a release is newer. Hidden while in Settings (its manual
+        // "Check for updates" dialog drives the same state machine) and during playback.
+        val updateManager = koinInject<UpdateManager>()
+        var showStartupToast by remember { mutableStateOf(false) }
+        val settingsRepo = koinInject<tv.own.owntv.features.settings.data.SettingsRepository>()
+        val updateCheckOnStart by settingsRepo.updateCheckOnStart.collectAsStateWithLifecycle(initialValue = false)
+        LaunchedEffect(updateCheckOnStart) {
+            if (updateCheckOnStart && !showStartupToast) {
+                kotlinx.coroutines.delay(5_000)
+                showStartupToast = true
+                updateManager.check()
+            }
+        }
+        if (showStartupToast && selectedSection != MainSection.SETTINGS && playerMode == PlayerMode.NONE) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
+                UpdateStatusToast(onDone = { showStartupToast = false; updateManager.reset() })
+            }
         }
     }
 }

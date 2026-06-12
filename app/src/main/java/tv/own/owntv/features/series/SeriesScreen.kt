@@ -23,10 +23,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -42,6 +45,7 @@ import tv.own.owntv.core.database.entity.DownloadEntity
 import tv.own.owntv.core.database.entity.EpisodeEntity
 import tv.own.owntv.core.database.entity.SeriesEntity
 import tv.own.owntv.core.model.DownloadStatus
+import tv.own.owntv.features.settings.data.SettingsRepository
 import tv.own.owntv.features.shell.components.CategoryRail
 import tv.own.owntv.features.shell.components.PreviewPane
 import tv.own.owntv.features.shell.components.RailCategory
@@ -52,7 +56,10 @@ import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.OwnTVSpinner
 import tv.own.owntv.ui.components.PosterCard
 import tv.own.owntv.ui.components.ProgressRing
+import tv.own.owntv.ui.components.ResumeDialog
+import androidx.compose.foundation.layout.width
 import tv.own.owntv.ui.components.SearchBar
+import tv.own.owntv.ui.components.SortChip
 import tv.own.owntv.ui.components.formatCount
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
@@ -68,6 +75,11 @@ fun SeriesScreen(
     val vm: SeriesViewModel = koinViewModel()
     val openedSeries by vm.openedSeries.collectAsStateWithLifecycle()
 
+    // Track leaving a show so the grid can put focus back on the poster you came from (the episode
+    // view that held focus is unmounted on Back — focus would otherwise die and land on the sidebar).
+    var returnFromShow by remember { mutableStateOf(false) }
+    LaunchedEffect(openedSeries) { if (openedSeries != null) returnFromShow = true }
+
     if (openedSeries != null) {
         EpisodeView(
             series = openedSeries!!,
@@ -81,22 +93,49 @@ fun SeriesScreen(
     } else {
         // Not in a show → nothing episode-specific to restore; clear the flag so it doesn't linger.
         if (restoreFocus) onRestored()
-        SeriesGrid(vm = vm, onChildFocused = onChildFocused, modifier = modifier)
+        SeriesGrid(
+            vm = vm,
+            onChildFocused = onChildFocused,
+            restoreSelected = returnFromShow,
+            onRestoredSelected = { returnFromShow = false },
+            modifier = modifier,
+        )
     }
 }
 
 @Composable
-private fun SeriesGrid(vm: SeriesViewModel, onChildFocused: () -> Unit, modifier: Modifier) {
+private fun SeriesGrid(
+    vm: SeriesViewModel,
+    onChildFocused: () -> Unit,
+    restoreSelected: Boolean = false,
+    onRestoredSelected: () -> Unit = {},
+    modifier: Modifier,
+) {
     val railItems by vm.railItems.collectAsStateWithLifecycle()
     val selectedKey by vm.selectedKey.collectAsStateWithLifecycle()
     val count by vm.count.collectAsStateWithLifecycle()
     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val sortMode by vm.sortMode.collectAsStateWithLifecycle()
     val selectedSeries by vm.selectedSeries.collectAsStateWithLifecycle()
     val series = vm.series.collectAsLazyPagingItems()
 
     val selectedIndex = railItems.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0)
     val selectedItem = railItems.getOrNull(selectedIndex)
+    val gridSelFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val firstItemFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+
+    // Back from a show's episodes: refocus the poster you opened (the pane's onEnter prefers
+    // gridSelFocus, so even when this request is intercepted it lands on the same poster).
+    LaunchedEffect(restoreSelected, series.itemCount) {
+        if (restoreSelected && series.itemCount > 0) {
+            kotlinx.coroutines.delay(80)
+            if (runCatching { gridSelFocus.requestFocus() }.isFailure) {
+                runCatching { firstItemFocus.requestFocus() }
+            }
+            onRestoredSelected()
+        }
+    }
 
     Row(modifier = modifier.fillMaxSize().onFocusChanged { if (it.hasFocus) onChildFocused() }) {
         CategoryRail(
@@ -106,13 +145,31 @@ private fun SeriesGrid(vm: SeriesViewModel, onChildFocused: () -> Unit, modifier
         )
 
         Column(
-            modifier = Modifier.weight(1.5f).fillMaxSize().focusGroup().padding(horizontal = Dimens.ScreenPaddingH, vertical = Dimens.ScreenPaddingV),
+            modifier = Modifier
+                .weight(1.5f)
+                .fillMaxSize()
+                // Entering this pane must land on a poster, never the search bar: prefer the
+                // last-focused series, else the first one. onEnter fires only for directional entry
+                // from outside (internal moves don't re-trigger it).
+                .focusProperties {
+                    onEnter = {
+                        if (runCatching { gridSelFocus.requestFocus() }.isFailure) {
+                            runCatching { firstItemFocus.requestFocus() }
+                        }
+                    }
+                }
+                .focusGroup()
+                .padding(horizontal = Dimens.ScreenPaddingH, vertical = Dimens.ScreenPaddingV),
         ) {
             Text("Series / ${selectedItem?.title ?: "All"}", style = MaterialTheme.typography.headlineLarge, color = OwnTVTheme.colors.onSurface)
             Spacer(Modifier.height(4.dp))
             Text("${selectedItem?.abbr ?: "ALL"} (${formatCount(count)} series)", style = MaterialTheme.typography.titleMedium, color = OwnTVTheme.colors.primary, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(14.dp))
-            SearchBar(query = searchQuery, onQueryChange = vm::setSearchQuery, placeholder = "Search ${selectedItem?.title ?: "series"}…", modifier = Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SearchBar(query = searchQuery, onQueryChange = vm::setSearchQuery, placeholder = "Search ${selectedItem?.title ?: "series"}…", modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(10.dp))
+                SortChip(mode = sortMode, onToggle = vm::toggleSort, playlistLabel = "Provider")
+            }
             Spacer(Modifier.height(14.dp))
 
             if (series.itemCount == 0) {
@@ -136,6 +193,11 @@ private fun SeriesGrid(vm: SeriesViewModel, onChildFocused: () -> Unit, modifier
                                 title = s.name,
                                 rating = s.rating,
                                 isFavorite = favoriteIds.contains(s.id),
+                                modifier = when {
+                                    s.id == selectedSeries?.id -> Modifier.focusRequester(gridSelFocus)
+                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
+                                    else -> Modifier
+                                },
                                 onFocus = { vm.onSeriesFocused(s) },
                                 onClick = { vm.openSeries(s) },
                             )
@@ -189,12 +251,43 @@ private fun EpisodeView(
     val lastPlayedId by vm.lastPlayedEpisodeId.collectAsStateWithLifecycle()
     val epListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val selFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val firstEpFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var initialFocused by remember { mutableStateOf(false) }
 
     BackHandler { vm.closeSeries() }
 
     val seasons = episodes.map { it.seasonNumber }.distinct().sorted()
     val activeSeason = if (seasons.contains(selectedSeason)) selectedSeason else seasons.firstOrNull() ?: 1
     val seasonEpisodes = episodes.filter { it.seasonNumber == activeSeason }
+
+    // Opening a show: grab focus on the first episode (the grid that had focus is unmounted, so
+    // focus would otherwise die and fall back to the sidebar). When entering via player-return,
+    // mark done WITHOUT focusing — the restore below owns focus, and this effect re-runs when
+    // restoreFocus flips back to false (it must not steal focus to episode 1 then).
+    LaunchedEffect(seasonEpisodes.isNotEmpty(), restoreFocus) {
+        if (initialFocused) return@LaunchedEffect
+        if (restoreFocus) { initialFocused = true; return@LaunchedEffect }
+        if (seasonEpisodes.isNotEmpty()) {
+            initialFocused = true
+            kotlinx.coroutines.delay(80)
+            runCatching { firstEpFocus.requestFocus() }
+        }
+    }
+
+    // Resume flow: AUTO continues silently, ASK prompts (≥10s saved), NEVER starts from zero.
+    val resumeMode by vm.resumeMode.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    var resumePrompt by remember { mutableStateOf<Pair<EpisodeEntity, Long>?>(null) }
+    val startEpisode: (EpisodeEntity) -> Unit = { ep ->
+        scope.launch {
+            val pos = vm.savedPositionMs(ep)
+            when {
+                resumeMode == SettingsRepository.ResumeMode.ASK && pos >= 10_000 -> resumePrompt = ep to pos
+                resumeMode == SettingsRepository.ResumeMode.AUTO && pos > 0 -> { vm.playEpisode(ep, pos); onFullscreen() }
+                else -> { vm.playEpisode(ep, 0); onFullscreen() }
+            }
+        }
+    }
 
     // Returning from fullscreen: scroll to and focus the episode you were watching.
     LaunchedEffect(restoreFocus, seasonEpisodes.size) {
@@ -244,14 +337,25 @@ private fun EpisodeView(
                     items(seasonEpisodes.size) { index ->
                         val ep = seasonEpisodes[index]
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val epModifier = Modifier.weight(1f).then(if (ep.id == lastPlayedId) Modifier.focusRequester(selFocus) else Modifier)
-                            EpisodeRow(episode = ep, onClick = { vm.playEpisode(ep); onFullscreen() }, modifier = epModifier)
+                            val epModifier = Modifier.weight(1f)
+                                .then(if (ep.id == lastPlayedId) Modifier.focusRequester(selFocus) else Modifier)
+                                .then(if (index == 0) Modifier.focusRequester(firstEpFocus) else Modifier)
+                            EpisodeRow(episode = ep, onClick = { startEpisode(ep) }, modifier = epModifier)
                             EpisodeDownloadBtn(download = downloads[ep.id]) { vm.downloadEpisode(ep) }
                         }
                     }
                 }
             }
         }
+    }
+
+    resumePrompt?.let { (ep, pos) ->
+        ResumeDialog(
+            positionMs = pos,
+            onResume = { resumePrompt = null; vm.playEpisode(ep, pos); onFullscreen() },
+            onStartOver = { resumePrompt = null; vm.playEpisode(ep, 0); onFullscreen() },
+            onDismiss = { resumePrompt = null },
+        )
     }
 }
 

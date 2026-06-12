@@ -19,12 +19,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -46,6 +51,8 @@ import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.SearchBar
+import tv.own.owntv.ui.components.SortChip
+import tv.own.owntv.ui.components.TextInputDialog
 import tv.own.owntv.ui.components.formatCount
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
@@ -68,6 +75,7 @@ fun LiveScreen(
     val previewChannel by vm.previewChannel.collectAsStateWithLifecycle()
     val nowNext by vm.nowNext.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val sortMode by vm.sortMode.collectAsStateWithLifecycle()
     val livePreviewSetting by vm.livePreviewEnabled.collectAsStateWithLifecycle()
     val channels = vm.channels.collectAsLazyPagingItems()
     // Preview runs only when the player isn't busy (previewEnabled) AND the user hasn't turned it off.
@@ -88,6 +96,8 @@ fun LiveScreen(
 
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val selFocus = remember { FocusRequester() }
+    val firstItemFocus = remember { FocusRequester() }
+    var renaming by remember { mutableStateOf<ChannelEntity?>(null) }
     // Returning from fullscreen: scroll to and focus the channel you were watching (waits for the list to load).
     LaunchedEffect(restoreFocus, channels.itemCount) {
         if (!restoreFocus || channels.itemCount == 0) return@LaunchedEffect
@@ -121,6 +131,16 @@ fun LiveScreen(
             modifier = Modifier
                 .weight(1.4f)
                 .fillMaxSize()
+                // Entering this pane (from the rail or the preview) must land on a channel row, never
+                // the search bar: prefer the last-focused channel, else the first row. onEnter fires
+                // only for directional entry from outside (internal moves don't re-trigger it).
+                .focusProperties {
+                    onEnter = {
+                        if (runCatching { selFocus.requestFocus() }.isFailure) {
+                            runCatching { firstItemFocus.requestFocus() }
+                        }
+                    }
+                }
                 .focusGroup()
                 .padding(horizontal = Dimens.ScreenPaddingH, vertical = Dimens.ScreenPaddingV),
         ) {
@@ -134,12 +154,16 @@ fun LiveScreen(
             )
             Spacer(Modifier.height(14.dp))
 
-            SearchBar(
-                query = searchQuery,
-                onQueryChange = vm::setSearchQuery,
-                placeholder = "Search ${selectedItem?.title ?: "channels"}…",
-                modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.hasFocus) vm.stopPreview() },
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SearchBar(
+                    query = searchQuery,
+                    onQueryChange = vm::setSearchQuery,
+                    placeholder = "Search ${selectedItem?.title ?: "channels"}…",
+                    modifier = Modifier.weight(1f).onFocusChanged { if (it.hasFocus) vm.stopPreview() },
+                )
+                Spacer(Modifier.size(10.dp))
+                SortChip(mode = sortMode, onToggle = vm::toggleSort)
+            }
             Spacer(Modifier.height(14.dp))
 
             if (channels.itemCount == 0) {
@@ -158,7 +182,11 @@ fun LiveScreen(
                             ChannelRow(
                                 channel = channel,
                                 isFavorite = favoriteIds.contains(channel.id),
-                                modifier = if (channel.id == previewChannel?.id) Modifier.focusRequester(selFocus) else Modifier,
+                                modifier = when {
+                                    channel.id == previewChannel?.id -> Modifier.focusRequester(selFocus)
+                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
+                                    else -> Modifier
+                                },
                                 onFocus = { vm.onChannelFocused(channel) },
                                 onClick = { vm.ensurePlaying(channel); onFullscreen() },
                             )
@@ -177,8 +205,20 @@ fun LiveScreen(
                 showVideo = effectivePreview,
                 isFavorite = previewChannel?.let { favoriteIds.contains(it.id) } ?: false,
                 onToggleFavorite = { previewChannel?.let { vm.toggleFavorite(it) } },
+                onRename = { renaming = previewChannel },
+                onHide = { previewChannel?.let { vm.hideChannel(it) } },
             )
         }
+    }
+
+    renaming?.let { ch ->
+        TextInputDialog(
+            title = "Rename channel",
+            initial = ch.name,
+            hint = "Only for this profile. Leave blank to restore the original name.",
+            onConfirm = { vm.renameChannel(ch, it.takeIf { t -> t.isNotBlank() }); renaming = null },
+            onDismiss = { renaming = null },
+        )
     }
 }
 
@@ -235,6 +275,8 @@ private fun LivePreviewPane(
     showVideo: Boolean,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
+    onRename: () -> Unit,
+    onHide: () -> Unit,
 ) {
     val colors = OwnTVTheme.colors
     if (channel == null) {
@@ -263,13 +305,16 @@ private fun LivePreviewPane(
         EpgSection(nowNext)
 
         Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            OwnTVButton(
-                label = if (isFavorite) "Favorited" else "Favorite",
-                onClick = onToggleFavorite,
-                style = OwnTVButtonStyle.SECONDARY,
-                icon = OwnTVIcon.STAR,
-            )
+        OwnTVButton(
+            label = if (isFavorite) "Favorited" else "Favorite",
+            onClick = onToggleFavorite,
+            style = OwnTVButtonStyle.SECONDARY,
+            icon = OwnTVIcon.STAR,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            OwnTVButton(label = "Rename", onClick = onRename, style = OwnTVButtonStyle.SECONDARY)
+            OwnTVButton(label = "Hide", onClick = onHide, style = OwnTVButtonStyle.SECONDARY)
         }
         Spacer(Modifier.height(8.dp))
         Text("Press OK to watch fullscreen", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)

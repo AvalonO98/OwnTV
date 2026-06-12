@@ -42,22 +42,37 @@ targets **Android TV only** (leanback launcher, D-pad-first UI).
 ### 🎬 Playback (libmpv / FFmpeg)
 - Plays virtually any codec/container, and exposes **every** audio and subtitle track (not just the
   ones the device can decode).
+- **TV-optimized rendering** — on TV-class hardware the decoder writes frames **directly to the
+  display** (the zero-copy pipeline streaming apps use): smooth 4K HDR with the panel's native HDR
+  handling and fast channel starts, with subtitles drawn by the app. A **Renderer** setting can
+  force mpv's full GL renderer (complete ASS/PGS subtitle styling) on devices that can afford it.
 - Custom TV HUD: scrubbable seek bar, prev/next, audio/subtitle/speed pickers, zoom & aspect modes,
   volume, and auto-hide controls.
 - Large demuxer cache for smooth 4K/8K streams; **HDR passthrough** when the video and TV support it.
 - **Mini-player / PiP** — dock a movie or episode to a corner and keep browsing, then expand or close.
+- **Resume, your way** — movies & episodes remember where you stopped; replaying shows a small
+  *"Resume at 23:45?"* prompt, with a setting for **Always / Ask / Never** resume.
 - 📺 **[Complete player design & feature reference →](extras/player.html)** — an interactive Material 3
   mockup documenting the full player HUD, PiP, popup menus, and remote-key mappings.
 
 ### 🧭 Browse
 - **Live TV**, **Movies**, **Series**, **Downloads**, and a full **EPG Guide**.
-- Folder rail with section-specific **Favorites** and **History**, plus inline per-folder search and a
-  cross-section **global search**.
+- Folder rail with section-specific **Favorites** and **History** — it expands on focus to show **full
+  category names**. Inline per-folder search and a cross-section **global search** — TV-style: search
+  bars take focus like any control and only open the keyboard on **OK**.
+- **Sort toggle** per section: your **playlist's own order** or **A–Z** (Live TV defaults to playlist order).
+- **Customize everything (per profile):** hide, rename & reorder categories; hide & rename channels —
+  and it all survives re-syncs.
 - Built for scale — tested with ~50k channels / ~168k movies via streaming import and Paging 3.
 
 ### 🗓️ EPG
 - A full **time × channel guide grid** (XMLTV from Xtream `xmltv.php` or an M3U `url-tvg`), plus
   per-channel **now/next** in the Live preview.
+- **Custom EPG URL per source** (Xtream *and* M3U) — your own XMLTV link overrides the defaults.
+- **Tune from the guide**: OK on a channel tunes straight to it; programme details have a
+  *Watch channel* button.
+- Clear status everywhere: the Guide shows *"Guide loaded: N channels · M programmes"*, and each
+  source row in Settings shows its own EPG state.
 
 ### 👥 Profiles
 - Multiple profiles with their own favorites/history/resume, optional **PIN locks** (salted hash) and a
@@ -68,11 +83,24 @@ targets **Android TV only** (leanback launcher, D-pad-first UI).
   download folder.
 
 ### 🎨 Personalization & settings
-- Material 3 theme (AMOLED dark / light), selectable **accent** colors, UI zoom, avatars.
+- Material 3 theme (AMOLED dark / light / system), **any accent color** — presets, a palette, or an
+  exact **hex code** (the whole theme is generated from it) — UI zoom, per-profile avatars.
 - **Video Player** settings: hardware decoding, default zoom, subtitle size & language, audio sync.
-- **Backup & Restore** of profiles + sources, per-source User-Agent, refresh-on-startup, default source.
+- **Complete Backup & Restore** — one file covers profiles, sources, customizations, **favorites,
+  watch history, and resume positions** — and you **choose what to include** on export and what to
+  apply on restore; per-source User-Agent, refresh-on-startup, default source.
+- **In-app updates** — OwnTV checks GitHub Releases (automatically on startup with a small corner
+  status card — toggleable — or manually), shows the full changelog, and installs the new APK right
+  on the TV. No browser, no storage permission.
 
 ### 🛡️ Robustness
+- **Sized for real TVs** — the player's memory budget scales to the device (lean stream buffers on
+  low-RAM panels), a decode watchdog blocks 4K/8K software-decode death spirals with a clear error,
+  backgrounding releases the stream immediately, and the app sheds caches under memory pressure.
+- All player commands run **off the UI thread** — a stalling stream can never freeze the remote (no ANRs),
+  and fast preview-scrolling coalesces loads so only the channel you land on is opened.
+- **Connection-friendly**: preview → fullscreen reuses the same stream (no reconnect — kind to strict
+  1-connection providers), and a dropped live stream **auto-reconnects** before showing an error + Retry.
 - Offline detection with a banner, and friendly, offline-aware error messages on import/sync/guide.
 
 ---
@@ -177,11 +205,13 @@ cloud — no local build needed:
 
 - **Every push / PR** → builds a debug APK and uploads it as a workflow **artifact** named
   `OwnTV-v<version>-<sha>.apk` (download it from the run's *Summary → Artifacts*).
-- **Push a `v*` tag** (e.g. `git tag v1.0.0 && git push --tags`) → builds the APK and publishes a
-  **GitHub Release** with `OwnTV-v1.0.0.apk` attached and auto-generated notes.
+- **Push a `v*` tag** (e.g. `git tag v1.1.0 && git push origin v1.1.0`) → builds a **signed** APK and
+  publishes a **GitHub Release** with `OwnTV-v1.1.0.apk` attached. The release notes are taken from
+  the newest section of [`CHANGELOG.md`](CHANGELOG.md) (which the in-app updater shows as
+  "What's new"), plus GitHub's auto-generated commit list.
 
-The version comes from `versionName` in [`app/build.gradle.kts`](app/build.gradle.kts) — bump it before
-tagging a release.
+**Versioning is automatic**: `versionName`/`versionCode` are derived from the tag (e.g. `v1.1.0` →
+`1.1.0` / `10100`) — no need to touch `build.gradle.kts`.
 
 **Signed release builds (optional, recommended for distribution).** Tag builds are debug-signed until you
 add a release keystore. Create one and add four repo **Secrets** to get properly signed releases:

@@ -33,7 +33,11 @@ class SettingsViewModel(
     private val sourceRepository: SourceRepository,
     private val settings: SettingsRepository,
     private val connectivity: ConnectivityObserver,
+    private val epgDao: tv.own.owntv.core.database.dao.EpgDao,
 ) : ViewModel() {
+
+    /** Stored EPG programme count for a source — the row shows it as the EPG status. */
+    fun epgCount(sourceId: Long): kotlinx.coroutines.flow.Flow<Int> = epgDao.countForSource(sourceId)
 
     sealed interface ImportState {
         data object Idle : ImportState
@@ -87,6 +91,26 @@ class SettingsViewModel(
     val hwDecoding: StateFlow<Boolean> = settings.hwDecoding.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     fun setHwDecoding(enabled: Boolean) { viewModelScope.launch { settings.setHwDecoding(enabled) } }
 
+    val renderMode: StateFlow<SettingsRepository.RenderMode> =
+        settings.renderMode.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.RenderMode.AUTO)
+    fun setRenderMode(name: String) {
+        viewModelScope.launch {
+            settings.setRenderMode(runCatching { SettingsRepository.RenderMode.valueOf(name) }.getOrDefault(SettingsRepository.RenderMode.AUTO))
+        }
+    }
+
+    val updateCheckOnStart: StateFlow<Boolean> =
+        settings.updateCheckOnStart.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    fun setUpdateCheckOnStart(enabled: Boolean) { viewModelScope.launch { settings.setUpdateCheckOnStart(enabled) } }
+
+    val resumeMode: StateFlow<SettingsRepository.ResumeMode> =
+        settings.resumeMode.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.ResumeMode.ASK)
+    fun setResumeMode(name: String) {
+        viewModelScope.launch {
+            settings.setResumeMode(runCatching { SettingsRepository.ResumeMode.valueOf(name) }.getOrDefault(SettingsRepository.ResumeMode.ASK))
+        }
+    }
+
     val defaultZoom: StateFlow<String> = settings.defaultZoom.stateIn(viewModelScope, SharingStarted.Eagerly, "FIT")
     fun setDefaultZoom(name: String) { viewModelScope.launch { settings.setDefaultZoom(name) } }
 
@@ -109,6 +133,10 @@ class SettingsViewModel(
     val accent: StateFlow<AccentColor> = settings.accent.stateIn(viewModelScope, SharingStarted.Eagerly, AccentColor.TEAL)
     fun setAccent(accent: AccentColor) { viewModelScope.launch { settings.setAccent(accent) } }
 
+    /** Custom accent hex ("#52DBC8"); blank = the preset is in effect. */
+    val customAccent: StateFlow<String> = settings.customAccent.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+    fun setCustomAccent(hex: String) { viewModelScope.launch { settings.setCustomAccent(hex) } }
+
     val uiZoomPercent: StateFlow<Int> = settings.uiZoomPercent.stateIn(viewModelScope, SharingStarted.Eagerly, UiZoom.DEFAULT)
     fun setUiZoom(percent: Int) { viewModelScope.launch { settings.setUiZoomPercent(UiZoom.clamp(percent)) } }
 
@@ -121,7 +149,7 @@ class SettingsViewModel(
     }
 
     /** Edit an existing source's settings (no re-import unless the user re-syncs). */
-    fun updateSource(id: Long, name: String, urlOrServer: String, user: String, pass: String, userAgent: String, refreshOnStart: Boolean) {
+    fun updateSource(id: Long, name: String, urlOrServer: String, user: String, pass: String, userAgent: String, epgUrl: String, refreshOnStart: Boolean) {
         viewModelScope.launch {
             val existing = sourceDao.getById(id) ?: return@launch
             sourceRepository.updateSource(
@@ -131,6 +159,7 @@ class SettingsViewModel(
                     username = user.trim().takeIf { it.isNotBlank() } ?: existing.username,
                     password = pass.takeIf { it.isNotBlank() } ?: existing.password,
                     userAgent = userAgent.trim().takeIf { it.isNotBlank() },
+                    epgUrl = epgUrl.trim().takeIf { it.isNotBlank() },
                 ),
             )
             settings.setSourceRefresh(id, refreshOnStart)
@@ -143,12 +172,20 @@ class SettingsViewModel(
     private val _progress = MutableStateFlow<ImportStage?>(null)
     val progress: StateFlow<ImportStage?> = _progress.asStateFlow()
 
-    fun addXtream(name: String, server: String, user: String, pass: String, userAgent: String = "", refreshOnStart: Boolean = false) = runImport(refreshOnStart) { pid ->
-        sourceRepository.addXtreamSource(pid, name.ifBlank { "My IPTV" }, server.trim(), user.trim(), pass, userAgent.trim().takeIf { it.isNotBlank() })
+    fun addXtream(name: String, server: String, user: String, pass: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) = runImport(refreshOnStart) { pid ->
+        sourceRepository.addXtreamSource(
+            pid, name.ifBlank { "My IPTV" }, server.trim(), user.trim(), pass,
+            userAgent.trim().takeIf { it.isNotBlank() },
+            epgUrl.trim().takeIf { it.isNotBlank() },
+        )
     }
 
-    fun addM3u(name: String, url: String, userAgent: String = "", refreshOnStart: Boolean = false) = runImport(refreshOnStart) { pid ->
-        sourceRepository.addM3uSource(pid, name.ifBlank { "My Playlist" }, url.trim(), userAgent.trim().takeIf { it.isNotBlank() })
+    fun addM3u(name: String, url: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) = runImport(refreshOnStart) { pid ->
+        sourceRepository.addM3uSource(
+            pid, name.ifBlank { "My Playlist" }, url.trim(),
+            userAgent.trim().takeIf { it.isNotBlank() },
+            epgUrl.trim().takeIf { it.isNotBlank() },
+        )
     }
 
     private fun runImport(refreshOnStart: Boolean = false, addSource: suspend (Long) -> SourceEntity) {

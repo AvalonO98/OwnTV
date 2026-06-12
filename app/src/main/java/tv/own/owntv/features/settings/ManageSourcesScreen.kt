@@ -21,11 +21,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -57,8 +61,18 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var editingSource by remember { mutableStateOf<SourceEntity?>(null) }
     var confirmDelete by remember { mutableStateOf<SourceEntity?>(null) }
     val addFocus = remember { FocusRequester() }
-    LaunchedEffect(showAdd, editingSource, confirmDelete) {
-        if (!showAdd && editingSource == null && confirmDelete == null) { kotlinx.coroutines.delay(50); runCatching { addFocus.requestFocus() } }
+    val errorFocus = remember { FocusRequester() }
+    // Whenever we land back on the source list (add/edit/re-sync/delete closed), refocus "Add Source".
+    LaunchedEffect(showAdd, editingSource, confirmDelete, resyncing) {
+        if (!showAdd && editingSource == null && confirmDelete == null && !resyncing) {
+            kotlinx.coroutines.delay(120); runCatching { addFocus.requestFocus() }
+        }
+    }
+    // A failed import/re-sync swaps the form for an error screen — move focus onto its action button.
+    LaunchedEffect(importState) {
+        if (importState is SettingsViewModel.ImportState.Failed) {
+            kotlinx.coroutines.delay(50); runCatching { errorFocus.requestFocus() }
+        }
     }
 
     BackHandler {
@@ -93,7 +107,7 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 Spacer(Modifier.height(8.dp))
                 Text(s.message, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
                 Spacer(Modifier.height(20.dp))
-                OwnTVButton("Close", onClick = { resyncing = false; vm.resetImport() })
+                OwnTVButton("Close", onClick = { resyncing = false; vm.resetImport() }, modifier = Modifier.focusRequester(errorFocus))
             }
         }
         return
@@ -103,8 +117,8 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         AddSourceScreen(
             initial = src,
             initialRefresh = src.id in refreshIds,
-            onStartXtream = { n, server, u, p, ua, refresh -> vm.updateSource(src.id, n, server, u, p, ua, refresh); editingSource = null },
-            onStartM3u = { n, url, ua, refresh -> vm.updateSource(src.id, n, url, "", "", ua, refresh); editingSource = null },
+            onStartXtream = { n, server, u, p, ua, epg, refresh -> vm.updateSource(src.id, n, server, u, p, ua, epg, refresh); editingSource = null },
+            onStartM3u = { n, url, ua, epg, refresh -> vm.updateSource(src.id, n, url, "", "", ua, epg, refresh); editingSource = null },
             onBack = { editingSource = null },
             modifier = modifier,
         )
@@ -114,8 +128,8 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     if (showAdd) {
         when (val s = importState) {
             SettingsViewModel.ImportState.Idle -> AddSourceScreen(
-                onStartXtream = { n, server, u, p, ua, refresh -> vm.addXtream(n, server, u, p, ua, refresh) },
-                onStartM3u = { n, url, ua, refresh -> vm.addM3u(n, url, ua, refresh) },
+                onStartXtream = { n, server, u, p, ua, epg, refresh -> vm.addXtream(n, server, u, p, ua, epg, refresh) },
+                onStartM3u = { n, url, ua, epg, refresh -> vm.addM3u(n, url, ua, epg, refresh) },
                 onBack = { showAdd = false },
                 modifier = modifier,
             )
@@ -135,7 +149,7 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 Spacer(Modifier.height(20.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OwnTVButton("Back", onClick = { showAdd = false; vm.resetImport() }, style = OwnTVButtonStyle.SECONDARY)
-                    OwnTVButton("Try again", onClick = { vm.resetImport() })
+                    OwnTVButton("Try again", onClick = { vm.resetImport() }, modifier = Modifier.focusRequester(errorFocus))
                 }
             }
         }
@@ -143,7 +157,15 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     }
 
     Column(
-        modifier = modifier.fillMaxSize().background(colors.surface).padding(horizontal = 40.dp, vertical = 28.dp),
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.surface)
+            // Spatial D-pad entry from the sidebar would land mid-list — route it to "Add Source".
+            // onEnter fires only for directional entry from outside; internal focus moves and
+            // programmatic restores never re-trigger it (an onFocusChanged redirect did, freezing focus).
+            .focusProperties { onEnter = { runCatching { addFocus.requestFocus() } } }
+            .focusGroup()
+            .padding(horizontal = 40.dp, vertical = 28.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Sources", style = MaterialTheme.typography.headlineLarge, color = colors.onSurface)
@@ -163,10 +185,12 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 items(sources, key = { it.id }) { source ->
                     // The default is the explicitly-chosen source, or the first one when none is set.
                     val isDefault = source.id == defaultId || (defaultId < 0 && source.id == sources.first().id)
+                    val epgCount by vm.epgCount(source.id).collectAsStateWithLifecycle(0)
                     SourceRow(
                         source = source,
                         refreshOnStart = source.id in refreshIds,
                         isDefault = isDefault,
+                        epgCount = epgCount,
                         showMakeDefault = sources.size > 1,
                         onMakeDefault = { vm.setDefaultSource(source.id) },
                         onEdit = { editingSource = source },
@@ -193,6 +217,7 @@ private fun SourceRow(
     source: SourceEntity,
     refreshOnStart: Boolean,
     isDefault: Boolean,
+    epgCount: Int,
     showMakeDefault: Boolean,
     onMakeDefault: () -> Unit,
     onEdit: () -> Unit,
@@ -221,6 +246,12 @@ private fun SourceRow(
                 buildString {
                     append(when (source.type) { SourceType.XTREAM -> "Xtream • ${source.url}"; SourceType.M3U -> "M3U • ${source.url}"; SourceType.LOCAL_BACKUP -> "Backup" })
                     if (refreshOnStart) append("  •  ⟳ on startup")
+                    // EPG status: ✓ + count once a guide downloaded; otherwise a hint that it hasn't.
+                    val hasEpgFeed = source.type == SourceType.XTREAM || !source.epgUrl.isNullOrBlank()
+                    when {
+                        epgCount > 0 -> append("  •  EPG ✓ ${tv.own.owntv.ui.components.formatCount(epgCount)}")
+                        hasEpgFeed -> append("  •  EPG: not downloaded (Guide → Refresh)")
+                    }
                 },
                 style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 1,
             )

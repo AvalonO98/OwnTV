@@ -266,7 +266,10 @@ private fun BottomBar(
                 CtrlButton(OwnTVIcon.AUDIO, badge = audioCount.takeIf { it > 1 }) { onOpenDialog(HudDialog.AUDIO) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                CtrlButton(OwnTVIcon.ASPECT, active = zoomMode != ZoomMode.FIT) { onOpenDialog(HudDialog.ZOOM) }
+                // Direct render mode: the decoder owns the surface, GL zoom modes can't apply (the
+                // view letterboxes to the correct aspect automatically) — hide the button.
+                val direct by player.directRender.collectAsStateWithLifecycle()
+                if (!direct) CtrlButton(OwnTVIcon.ASPECT, active = zoomMode != ZoomMode.FIT) { onOpenDialog(HudDialog.ZOOM) }
                 if (onPip != null && !isLive) CtrlButton(OwnTVIcon.PIP) { onPip() }
                 CtrlButton(OwnTVIcon.FULLSCREEN_EXIT) { onBack() }
             }

@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import tv.own.owntv.core.customize.CustomizationStore
+import tv.own.owntv.core.customize.applyCustomizations
 import tv.own.owntv.core.database.dao.CategoryDao
 import tv.own.owntv.core.database.dao.FavoriteDao
 import tv.own.owntv.core.database.dao.HistoryDao
@@ -55,12 +57,26 @@ class MovieViewModel(
     private val progressDao: ProgressDao,
     private val sourceDao: SourceDao,
     private val settings: SettingsRepository,
+    private val customize: CustomizationStore,
     private val player: OwnTVPlayer,
     private val downloadManager: DownloadManager,
 ) : ViewModel() {
 
     private data class Ctx(val profileId: Long, val sourceIds: List<Long>)
     private val ctx = MutableStateFlow(Ctx(-1L, emptyList()))
+
+    /** List ordering for this section (Provider order vs A–Z), persisted in DataStore. */
+    val sortMode: StateFlow<SettingsRepository.SortMode> = settings.sortMovies
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.SortMode.ALPHA)
+
+    fun toggleSort() {
+        viewModelScope.launch {
+            settings.setSortMovies(
+                if (sortMode.value == SettingsRepository.SortMode.PLAYLIST) SettingsRepository.SortMode.ALPHA
+                else SettingsRepository.SortMode.PLAYLIST,
+            )
+        }
+    }
 
     private val _selected = MutableStateFlow<LiveKey>(LiveKey.All)
     val selectedKey: StateFlow<LiveKey> = _selected.asStateFlow()
@@ -90,21 +106,28 @@ class MovieViewModel(
     val railItems: StateFlow<List<LiveRailItem>> = ctx
         .flatMapLatest { c ->
             if (c.profileId < 0) flowOf(defaultRail)
-            else categoryDao.observe(c.sourceIds, MediaType.MOVIE).map { cats ->
-                defaultRail + cats.map { LiveRailItem(LiveKey.Folder(it.id), it.name.take(3).uppercase(), it.name) }
+            else combine(
+                categoryDao.observe(c.sourceIds, MediaType.MOVIE),
+                customize.observe(c.profileId, MediaType.MOVIE),
+            ) { cats, cust ->
+                defaultRail + cats.applyCustomizations(cust).map { (cat, name) ->
+                    LiveRailItem(LiveKey.Folder(cat.id), name.take(3).uppercase(), name)
+                }
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, defaultRail)
 
     val movies: Flow<PagingData<MovieEntity>> = combine(
-        _selected, ctx, _search.map { it.trim() }.debounce(300).distinctUntilChanged(),
-    ) { key, c, query -> Triple(key, c, query) }
-        .flatMapLatest { (key, c, query) ->
+        _selected, ctx, _search.map { it.trim() }.debounce(300).distinctUntilChanged(), sortMode,
+    ) { key, c, query, sort -> Args(key, c, query, sort) }
+        .flatMapLatest { (key, c, query, sort) ->
             Pager(PagingConfig(pageSize = 60, prefetchDistance = 30, initialLoadSize = 90, maxSize = 300)) {
-                pagingSource(key, c, query)
+                pagingSource(key, c, query, sort)
             }.flow
         }
         .cachedIn(viewModelScope)
+
+    private data class Args(val key: LiveKey, val ctx: Ctx, val query: String, val sort: SettingsRepository.SortMode)
 
     val count: StateFlow<Int> = combine(_selected, ctx) { key, c -> key to c }
         .flatMapLatest { (key, c) -> countFlow(key, c) }
@@ -125,15 +148,22 @@ class MovieViewModel(
     fun setSearchQuery(query: String) { _search.value = query }
     fun onMovieFocused(movie: MovieEntity) { _selectedMovie.value = movie }
 
-    fun play(movie: MovieEntity) {
+    /** The user's resume preference (Always / Ask / Never) — the screen drives the prompt. */
+    val resumeMode: StateFlow<SettingsRepository.ResumeMode> = settings.resumeMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.ResumeMode.ASK)
+
+    /** Saved resume position for [movie] (0 when none) — used by the screen to decide the prompt. */
+    suspend fun savedPositionMs(movie: MovieEntity): Long =
+        progressDao.get(ctx.value.profileId, MediaType.MOVIE, movie.id)?.positionMs ?: 0
+
+    fun play(movie: MovieEntity, startPositionMs: Long = 0) {
         viewModelScope.launch {
-            val saved = progressDao.get(ctx.value.profileId, MediaType.MOVIE, movie.id)
             player.play(
                 movie.streamUrl,
                 title = movie.name,
                 year = movie.year?.toString(),
                 isLive = false,
-                startPositionMs = saved?.positionMs ?: 0,
+                startPositionMs = startPositionMs,
             )
             playingMovie = movie
             historyDao.record(WatchHistoryEntity(profileId = ctx.value.profileId, mediaType = MediaType.MOVIE, itemId = movie.id))
@@ -182,13 +212,14 @@ class MovieViewModel(
         }
     }
 
-    private fun pagingSource(key: LiveKey, c: Ctx, query: String): PagingSource<Int, MovieEntity> {
+    private fun pagingSource(key: LiveKey, c: Ctx, query: String, sort: SettingsRepository.SortMode): PagingSource<Int, MovieEntity> {
         val ids = c.sourceIds.ifEmpty { listOf(-1L) }
+        val playlist = sort == SettingsRepository.SortMode.PLAYLIST
         return if (query.isBlank()) when (key) {
-            LiveKey.All -> movieDao.pagingAll(ids)
+            LiveKey.All -> if (playlist) movieDao.pagingAllOriginal(ids) else movieDao.pagingAll(ids)
             LiveKey.Favorites -> movieDao.pagingFavorites(c.profileId)
             LiveKey.History -> movieDao.pagingHistory(c.profileId)
-            is LiveKey.Folder -> movieDao.pagingByCategory(key.id)
+            is LiveKey.Folder -> if (playlist) movieDao.pagingByCategory(key.id) else movieDao.pagingByCategoryAlpha(key.id)
         } else when (key) {
             LiveKey.All -> movieDao.searchAll(query, ids)
             LiveKey.Favorites -> movieDao.searchFavorites(query, c.profileId)

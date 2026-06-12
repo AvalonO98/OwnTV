@@ -21,12 +21,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.androidx.compose.koinViewModel
@@ -61,7 +66,16 @@ fun ManageProfilesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 
     BackHandler { onBack() }
 
-    Column(modifier = modifier.fillMaxSize().background(colors.surface).padding(horizontal = 40.dp, vertical = 28.dp)) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.surface)
+            // Spatial D-pad entry from the sidebar would land mid-list — route it to "Add Profile".
+            // onEnter fires only for directional entry from outside (internal moves don't re-trigger it).
+            .focusProperties { onEnter = { runCatching { addFocus.requestFocus() } } }
+            .focusGroup()
+            .padding(horizontal = 40.dp, vertical = 28.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Profiles", style = MaterialTheme.typography.headlineLarge, color = colors.onSurface)
             Spacer(Modifier.weight(1f))

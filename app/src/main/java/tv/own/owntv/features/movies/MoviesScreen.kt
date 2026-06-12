@@ -20,11 +20,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
@@ -33,12 +37,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.own.owntv.core.database.entity.DownloadEntity
 import tv.own.owntv.core.database.entity.MovieEntity
 import tv.own.owntv.core.model.DownloadStatus
+import tv.own.owntv.features.settings.data.SettingsRepository
 import tv.own.owntv.features.shell.components.CategoryRail
 import tv.own.owntv.features.shell.components.PreviewPane
 import tv.own.owntv.features.shell.components.RailCategory
@@ -46,7 +52,10 @@ import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.PosterCard
+import tv.own.owntv.ui.components.ResumeDialog
+import androidx.compose.foundation.layout.width
 import tv.own.owntv.ui.components.SearchBar
+import tv.own.owntv.ui.components.SortChip
 import tv.own.owntv.ui.components.formatCount
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
@@ -65,16 +74,33 @@ fun MoviesScreen(
     val count by vm.count.collectAsStateWithLifecycle()
     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val sortMode by vm.sortMode.collectAsStateWithLifecycle()
     val selectedMovie by vm.selectedMovie.collectAsStateWithLifecycle()
     val selectedProgress by vm.selectedProgress.collectAsStateWithLifecycle()
     val downloadStates by vm.downloadStates.collectAsStateWithLifecycle()
     val movies = vm.movies.collectAsLazyPagingItems()
+    val resumeMode by vm.resumeMode.collectAsStateWithLifecycle()
 
     val selectedIndex = railItems.indexOfFirst { it.key == selectedKey }.coerceAtLeast(0)
     val selectedItem = railItems.getOrNull(selectedIndex)
 
+    // Resume flow: AUTO continues silently, ASK prompts (≥10s saved), NEVER starts from zero.
+    val scope = rememberCoroutineScope()
+    var resumePrompt by remember { mutableStateOf<Pair<MovieEntity, Long>?>(null) }
+    val startMovie: (MovieEntity) -> Unit = { m ->
+        scope.launch {
+            val pos = vm.savedPositionMs(m)
+            when {
+                resumeMode == SettingsRepository.ResumeMode.ASK && pos >= 10_000 -> resumePrompt = m to pos
+                resumeMode == SettingsRepository.ResumeMode.AUTO && pos > 0 -> { vm.play(m, pos); onFullscreen() }
+                else -> { vm.play(m, 0); onFullscreen() }
+            }
+        }
+    }
+
     val gridState = rememberLazyGridState()
     val selFocus = remember { FocusRequester() }
+    val firstItemFocus = remember { FocusRequester() }
     // Returning from the player: scroll to and focus the movie you just played (waits for the grid to load).
     LaunchedEffect(restoreFocus, movies.itemCount) {
         if (!restoreFocus || movies.itemCount == 0) return@LaunchedEffect
@@ -99,6 +125,16 @@ fun MoviesScreen(
             modifier = Modifier
                 .weight(1.5f)
                 .fillMaxSize()
+                // Entering this pane must land on a poster, never the search bar: prefer the
+                // last-focused movie, else the first one. onEnter fires only for directional entry
+                // from outside (internal moves don't re-trigger it).
+                .focusProperties {
+                    onEnter = {
+                        if (runCatching { selFocus.requestFocus() }.isFailure) {
+                            runCatching { firstItemFocus.requestFocus() }
+                        }
+                    }
+                }
                 .focusGroup()
                 .padding(horizontal = Dimens.ScreenPaddingH, vertical = Dimens.ScreenPaddingV),
         ) {
@@ -111,12 +147,16 @@ fun MoviesScreen(
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(14.dp))
-            SearchBar(
-                query = searchQuery,
-                onQueryChange = vm::setSearchQuery,
-                placeholder = "Search ${selectedItem?.title ?: "movies"}…",
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SearchBar(
+                    query = searchQuery,
+                    onQueryChange = vm::setSearchQuery,
+                    placeholder = "Search ${selectedItem?.title ?: "movies"}…",
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(10.dp))
+                SortChip(mode = sortMode, onToggle = vm::toggleSort, playlistLabel = "Provider")
+            }
             Spacer(Modifier.height(14.dp))
 
             if (movies.itemCount == 0) {
@@ -141,9 +181,13 @@ fun MoviesScreen(
                                 title = movie.name,
                                 rating = movie.rating,
                                 isFavorite = favoriteIds.contains(movie.id),
-                                modifier = if (movie.id == selectedMovie?.id) Modifier.focusRequester(selFocus) else Modifier,
+                                modifier = when {
+                                    movie.id == selectedMovie?.id -> Modifier.focusRequester(selFocus)
+                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
+                                    else -> Modifier
+                                },
                                 onFocus = { vm.onMovieFocused(movie) },
-                                onClick = { vm.play(movie); onFullscreen() },
+                                onClick = { startMovie(movie) },
                             )
                         }
                     }
@@ -155,13 +199,23 @@ fun MoviesScreen(
             MovieDetailsPane(
                 movie = selectedMovie,
                 isFavorite = selectedMovie?.let { favoriteIds.contains(it.id) } ?: false,
-                resumePositionMs = selectedProgress?.positionMs ?: 0L,
+                // In "Never resume" the button should honestly say Play, not Resume.
+                resumePositionMs = if (resumeMode == SettingsRepository.ResumeMode.NEVER) 0L else selectedProgress?.positionMs ?: 0L,
                 download = selectedMovie?.let { downloadStates[it.id] },
-                onPlay = { selectedMovie?.let { vm.play(it); onFullscreen() } },
+                onPlay = { selectedMovie?.let { startMovie(it) } },
                 onToggleFavorite = { selectedMovie?.let { vm.toggleFavorite(it) } },
                 onDownload = { selectedMovie?.let { vm.download(it) } },
             )
         }
+    }
+
+    resumePrompt?.let { (m, pos) ->
+        ResumeDialog(
+            positionMs = pos,
+            onResume = { resumePrompt = null; vm.play(m, pos); onFullscreen() },
+            onStartOver = { resumePrompt = null; vm.play(m, 0); onFullscreen() },
+            onDismiss = { resumePrompt = null },
+        )
     }
 }
 
@@ -209,7 +263,7 @@ private fun MovieDetailsPane(
             Text(plot, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant, maxLines = 6)
         }
         Spacer(Modifier.height(20.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OwnTVButton(
                 label = if (resumePositionMs > 0) "Resume" else "Play",
                 onClick = onPlay,
@@ -221,14 +275,16 @@ private fun MovieDetailsPane(
                 style = OwnTVButtonStyle.SECONDARY,
                 icon = OwnTVIcon.STAR,
             )
-            OwnTVButton(
-                label = downloadLabel(download),
-                onClick = onDownload,
-                style = OwnTVButtonStyle.SECONDARY,
-                icon = OwnTVIcon.DOWNLOADS,
-                enabled = download == null || download.status == DownloadStatus.FAILED,
-            )
         }
+        // Own row — squeezed into the row above, its label wrapped and stretched the pill vertically.
+        Spacer(Modifier.height(10.dp))
+        OwnTVButton(
+            label = downloadLabel(download),
+            onClick = onDownload,
+            style = OwnTVButtonStyle.SECONDARY,
+            icon = OwnTVIcon.DOWNLOADS,
+            enabled = download == null || download.status == DownloadStatus.FAILED,
+        )
     }
 }
 

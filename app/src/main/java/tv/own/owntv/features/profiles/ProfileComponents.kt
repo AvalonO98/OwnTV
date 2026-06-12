@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -77,17 +78,28 @@ internal fun PinDialog(title: String, onSubmit: (String) -> Unit, onDismiss: () 
             modifier = Modifier.fillMaxWidth().focusRequester(focus),
         )
         Spacer(Modifier.height(20.dp))
+        // Explicit left/right links: spatial D-pad search from Cancel would otherwise wander into
+        // the gate's profile tiles BEHIND the dialog before reaching OK.
+        val cancelFocus = remember { FocusRequester() }
+        val okFocus = remember { FocusRequester() }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OwnTVButton("Cancel", onClick = onDismiss, style = OwnTVButtonStyle.SECONDARY)
+            OwnTVButton(
+                "Cancel", onClick = onDismiss, style = OwnTVButtonStyle.SECONDARY,
+                modifier = Modifier.focusRequester(cancelFocus).focusProperties { right = okFocus },
+            )
             Spacer(Modifier.weight(1f))
-            OwnTVButton("OK", onClick = { onSubmit(pin) }, enabled = pin.length >= 4)
+            OwnTVButton(
+                "OK", onClick = { onSubmit(pin) }, enabled = pin.length >= 4,
+                modifier = Modifier.focusRequester(okFocus).focusProperties { left = cancelFocus },
+            )
         }
     }
 }
 
 /**
  * Create / edit a profile: name, avatar, kids flag and an optional PIN. [initial] non-null = edit.
- * [onConfirm] receives (name, avatarId, isKids, pin) where pin == null means "leave unchanged".
+ * [onConfirm] receives (name, avatarId, isKids, pin): null = leave the PIN unchanged,
+ * "" = remove the PIN lock, otherwise = set this PIN.
  */
 @Composable
 internal fun ProfileEditorDialog(
@@ -100,6 +112,7 @@ internal fun ProfileEditorDialog(
     var avatarId by remember { mutableIntStateOf(initial?.avatarId ?: 0) }
     var isKids by remember { mutableStateOf(initial?.isKids ?: false) }
     var pin by remember { mutableStateOf("") }
+    var removePin by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
@@ -129,15 +142,21 @@ internal fun ProfileEditorDialog(
 
         ToggleRow(label = "Kids profile", desc = "Simplified, safe browsing", checked = isKids) { isKids = it }
         Spacer(Modifier.height(12.dp))
-        OwnTVTextField(
-            value = pin,
-            onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) pin = it },
-            label = if (initial?.pinHash != null) "Change PIN (blank = keep)" else "PIN (optional)",
-            placeholder = "4–6 digits",
-            keyboardType = KeyboardType.NumberPassword,
-            isPassword = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (initial?.pinHash != null) {
+            ToggleRow(label = "Remove PIN lock", desc = "This profile opens without a PIN", checked = removePin) { removePin = it }
+            Spacer(Modifier.height(12.dp))
+        }
+        if (!removePin) {
+            OwnTVTextField(
+                value = pin,
+                onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) pin = it },
+                label = if (initial?.pinHash != null) "Change PIN (blank = keep)" else "PIN (optional)",
+                placeholder = "4–6 digits",
+                keyboardType = KeyboardType.NumberPassword,
+                isPassword = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
 
         Spacer(Modifier.height(22.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -145,8 +164,8 @@ internal fun ProfileEditorDialog(
             Spacer(Modifier.weight(1f))
             OwnTVButton(
                 label = if (initial == null) "Create" else "Save",
-                onClick = { onConfirm(name, avatarId, isKids, pin.takeIf { it.isNotBlank() }) },
-                enabled = name.isNotBlank() && (pin.isEmpty() || pin.length >= 4),
+                onClick = { onConfirm(name, avatarId, isKids, if (removePin) "" else pin.takeIf { it.isNotBlank() }) },
+                enabled = name.isNotBlank() && (removePin || pin.isEmpty() || pin.length >= 4),
             )
         }
     }

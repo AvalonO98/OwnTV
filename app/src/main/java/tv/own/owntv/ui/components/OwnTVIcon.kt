@@ -23,6 +23,7 @@ enum class OwnTVIcon {
     PERSON, ADD, SETTINGS, PALETTE, THEME, ZOOM, PLAYLIST, EPG, VIDEO, SHARE, CHEVRON, FAVORITE,
     PAUSE, REWIND, FORWARD, AUDIO, SUBTITLE, SKIP_NEXT, SKIP_PREVIOUS,
     BACK, VOLUME_HIGH, VOLUME_LOW, VOLUME_MUTE, ASPECT, FULLSCREEN, FULLSCREEN_EXIT, PIP, CLOSE,
+    SORT,
 }
 
 @Composable
@@ -65,6 +66,11 @@ fun OwnTVIcon(
                 drawLineStroke(p(4f, 7f), p(20f, 7f), tint, stroke)
                 drawLineStroke(p(4f, 12f), p(20f, 12f), tint, stroke)
                 drawLineStroke(p(4f, 17f), p(20f, 17f), tint, stroke)
+            }
+            OwnTVIcon.SORT -> { // descending bars — classic sort glyph
+                drawLineStroke(p(4f, 7f), p(20f, 7f), tint, stroke)
+                drawLineStroke(p(4f, 12f), p(14f, 12f), tint, stroke)
+                drawLineStroke(p(4f, 17f), p(9f, 17f), tint, stroke)
             }
             OwnTVIcon.HISTORY -> {
                 drawCircleStroke(p(12f, 12f), 9f * s, tint, stroke)

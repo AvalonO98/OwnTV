@@ -67,7 +67,7 @@ class SetupViewModel(
         }
     }
 
-    fun startXtream(name: String, server: String, username: String, password: String, userAgent: String = "", refreshOnStart: Boolean = false) =
+    fun startXtream(name: String, server: String, username: String, password: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) =
         runImport(refreshOnStart) { profileId ->
             sourceRepository.addXtreamSource(
                 profileId = profileId,
@@ -76,16 +76,18 @@ class SetupViewModel(
                 username = username.trim(),
                 password = password,
                 userAgent = userAgent.trim().takeIf { it.isNotBlank() },
+                epgUrl = epgUrl.trim().takeIf { it.isNotBlank() },
             )
         }
 
-    fun startM3u(name: String, url: String, userAgent: String = "", refreshOnStart: Boolean = false) =
+    fun startM3u(name: String, url: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) =
         runImport(refreshOnStart) { profileId ->
             sourceRepository.addM3uSource(
                 profileId = profileId,
                 name = name.ifBlank { "My Playlist" },
                 url = url.trim(),
                 userAgent = userAgent.trim().takeIf { it.isNotBlank() },
+                epgUrl = epgUrl.trim().takeIf { it.isNotBlank() },
             )
         }
 

@@ -18,6 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -41,6 +43,7 @@ fun OwnTVTextField(
     placeholder: String = "",
     keyboardType: KeyboardType = KeyboardType.Text,
     isPassword: Boolean = false,
+    focusRequester: FocusRequester? = null,
 ) {
     val colors = OwnTVTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -55,6 +58,7 @@ fun OwnTVTextField(
             onValueChange = onValueChange,
             modifier = Modifier
                 .fillMaxWidth()
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                 .height(52.dp)
                 .clip(shape)
                 .background(colors.surfaceContainerHigh)

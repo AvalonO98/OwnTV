@@ -71,6 +71,10 @@ class ShellViewModel(
     val accent: StateFlow<AccentColor> = settings.accent
         .stateIn(viewModelScope, SharingStarted.Eagerly, AccentColor.TEAL)
 
+    /** Custom accent hex ("#52DBC8"); blank = the preset above is in effect. */
+    val customAccent: StateFlow<String> = settings.customAccent
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
     /** The active profile's avatar (so the sidebar reflects profile edits, not a separate setting). */
     val avatarId: StateFlow<Int> = settings.activeProfileId
         .flatMapLatest { pid -> if (pid < 0) flowOf(0) else profileDao.observeById(pid).map { it?.avatarId ?: 0 } }

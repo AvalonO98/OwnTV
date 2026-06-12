@@ -24,12 +24,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,11 +89,29 @@ fun VideoPlayerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier)
     val audioDelay by vm.audioDelayMs.collectAsStateWithLifecycle()
     val audioLang by vm.preferredAudioLang.collectAsStateWithLifecycle()
     val subLang by vm.preferredSubLang.collectAsStateWithLifecycle()
+    val resumeMode by vm.resumeMode.collectAsStateWithLifecycle()
+    val renderMode by vm.renderMode.collectAsStateWithLifecycle()
 
     var dialog by remember { mutableStateOf(Dialog.NONE) }
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
     BackHandler { onBack() }
+
+    // Dialog-close focus return: closing a picker refocuses the row that opened it. The restore
+    // request crosses INTO this screen's focus group from the dialog, so the group's onEnter
+    // intercepts it — it consults dialogReturn first (and clears it) instead of hijacking.
+    val dialogRowFocus = remember { Dialog.entries.associateWith { FocusRequester() } }
+    var dialogReturn by remember { mutableStateOf<FocusRequester?>(null) }
+    LaunchedEffect(dialog) {
+        if (dialog != Dialog.NONE) {
+            dialogReturn = dialogRowFocus.getValue(dialog)
+        } else {
+            dialogReturn?.let { row ->
+                kotlinx.coroutines.delay(80)
+                runCatching { row.requestFocus() }
+            }
+        }
+    }
 
     val zoomMode = runCatching { ZoomMode.valueOf(zoom) }.getOrDefault(ZoomMode.FIT)
 
@@ -96,6 +119,16 @@ fun VideoPlayerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier)
         modifier = modifier
             .fillMaxSize()
             .background(colors.surface)
+            // onEnter fires for any entry from outside the group — including our own dialog-close
+            // restores (the dialogs live outside it) — so it must prefer the pending return row.
+            .focusProperties {
+                onEnter = {
+                    val target = dialogReturn ?: firstFocus
+                    dialogReturn = null
+                    runCatching { target.requestFocus() }
+                }
+            }
+            .focusGroup()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 40.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -112,10 +145,25 @@ fun VideoPlayerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier)
             onClick = { vm.setHwDecoding(!hw) },
         )
         Row2(
+            icon = OwnTVIcon.VIDEO, title = "Renderer",
+            desc = "Auto picks the smoothest path for this device; Quality forces mpv's full renderer.",
+            chip = renderMode.label, chevron = true,
+            modifier = Modifier.focusRequester(dialogRowFocus.getValue(Dialog.RENDERER)),
+            onClick = { dialog = Dialog.RENDERER },
+        )
+        Row2(
             icon = OwnTVIcon.ASPECT, title = "Default zoom",
             desc = "Aspect/zoom applied when playback starts.",
             chip = zoomMode.label, chevron = true,
+            modifier = Modifier.focusRequester(dialogRowFocus.getValue(Dialog.ZOOM)),
             onClick = { dialog = Dialog.ZOOM },
+        )
+        Row2(
+            icon = OwnTVIcon.PLAY, title = "Resume playback",
+            desc = "What to do when a movie or episode has a saved position.",
+            chip = resumeMode.label, chevron = true,
+            modifier = Modifier.focusRequester(dialogRowFocus.getValue(Dialog.RESUME)),
+            onClick = { dialog = Dialog.RESUME },
         )
 
         Divider()
@@ -124,12 +172,14 @@ fun VideoPlayerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier)
             icon = OwnTVIcon.SUBTITLE, title = "Subtitle size",
             desc = "Scale subtitle text.",
             chip = subSizeName(subScale), chevron = true,
+            modifier = Modifier.focusRequester(dialogRowFocus.getValue(Dialog.SUB_SIZE)),
             onClick = { dialog = Dialog.SUB_SIZE },
         )
         Row2(
             icon = OwnTVIcon.SUBTITLE, title = "Preferred subtitle language",
             desc = "Auto-select this subtitle track when available.",
             chip = langName(subLang), chevron = true,
+            modifier = Modifier.focusRequester(dialogRowFocus.getValue(Dialog.SUB_LANG)),
             onClick = { dialog = Dialog.SUB_LANG },
         )
 
@@ -139,12 +189,14 @@ fun VideoPlayerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier)
             icon = OwnTVIcon.AUDIO, title = "Preferred audio language",
             desc = "Auto-select this audio track when available.",
             chip = langName(audioLang), chevron = true,
+            modifier = Modifier.focusRequester(dialogRowFocus.getValue(Dialog.AUDIO_LANG)),
             onClick = { dialog = Dialog.AUDIO_LANG },
         )
         Row2(
             icon = OwnTVIcon.AUDIO, title = "Audio sync",
             desc = "Shift audio earlier or later to match the video.",
             chip = "%+d ms".format(audioDelay), chevron = true,
+            modifier = Modifier.focusRequester(dialogRowFocus.getValue(Dialog.AUDIO_SYNC)),
             onClick = { dialog = Dialog.AUDIO_SYNC },
         )
     }
@@ -155,6 +207,20 @@ fun VideoPlayerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier)
             options = ZoomMode.entries.map { it.name to it.label },
             selected = zoomMode.name,
             onSelect = { vm.setDefaultZoom(it); dialog = Dialog.NONE },
+            onDismiss = { dialog = Dialog.NONE },
+        )
+        Dialog.RENDERER -> PickerDialog(
+            title = "Renderer",
+            options = tv.own.owntv.features.settings.data.SettingsRepository.RenderMode.entries.map { it.name to it.label },
+            selected = renderMode.name,
+            onSelect = { vm.setRenderMode(it); dialog = Dialog.NONE },
+            onDismiss = { dialog = Dialog.NONE },
+        )
+        Dialog.RESUME -> PickerDialog(
+            title = "Resume playback",
+            options = tv.own.owntv.features.settings.data.SettingsRepository.ResumeMode.entries.map { it.name to it.label },
+            selected = resumeMode.name,
+            onSelect = { vm.setResumeMode(it); dialog = Dialog.NONE },
             onDismiss = { dialog = Dialog.NONE },
         )
         Dialog.SUB_SIZE -> PickerDialog(
@@ -190,7 +256,7 @@ fun VideoPlayerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier)
     }
 }
 
-private enum class Dialog { NONE, ZOOM, SUB_SIZE, SUB_LANG, AUDIO_LANG, AUDIO_SYNC }
+private enum class Dialog { NONE, ZOOM, SUB_SIZE, SUB_LANG, AUDIO_LANG, AUDIO_SYNC, RESUME, RENDERER }
 
 // --- Shared building blocks (kept local to the settings sub-screens) ---
 

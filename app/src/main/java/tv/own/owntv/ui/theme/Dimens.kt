@@ -12,8 +12,9 @@ object Dimens {
     val SidebarWidthExpanded = 272.dp
     val SidebarWidthCollapsed = 96.dp
 
-    // Layer 2 — category rail
+    // Layer 2 — category rail (expands to show full names when it holds focus)
     val RailWidth = 92.dp
+    val RailWidthExpanded = 232.dp
     val RailPillSize = 56.dp
 
     // MD3 settings tonal icon tile

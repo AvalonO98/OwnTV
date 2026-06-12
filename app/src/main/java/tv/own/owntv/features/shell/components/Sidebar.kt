@@ -22,7 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,6 +65,7 @@ fun Sidebar(
 ) {
     val colors = OwnTVTheme.colors
     var hasFocus by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val expanded = hasFocus
     val width by animateDpAsState(
         targetValue = if (expanded) Dimens.SidebarWidthExpanded else Dimens.SidebarWidthCollapsed,
@@ -74,8 +77,14 @@ fun Sidebar(
         modifier = modifier
             .fillMaxHeight()
             .onFocusChanged {
+                // D-pad focus search is spatial — entering the panel from the content area would
+                // land on whatever item happens to be horizontally aligned. Redirect every entry to
+                // the SELECTED section instead (internal up/down moves don't re-trigger this).
+                // Deferred a frame: requesting focus inside onFocusChanged is rejected mid-transaction.
+                val entered = it.hasFocus && !hasFocus
                 hasFocus = it.hasFocus
                 if (it.hasFocus) onFocused()
+                if (entered) scope.launch { runCatching { selectedItemFocusRequester.requestFocus() } }
             }
             .focusGroup()
             .width(width)
