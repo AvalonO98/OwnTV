@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -80,10 +82,16 @@ class LiveViewModel(
     private val epgSourceStore: tv.own.owntv.core.epg.EpgSourceStore,
     val player: OwnTVPlayer,
     val previewEngine: tv.own.owntv.player.LivePreviewEngine,
+    private val forceMpvStore: tv.own.owntv.core.player.ForceMpvStore,
 ) : ViewModel() {
 
     val livePreviewEnabled: StateFlow<Boolean> = settings.livePreviewEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /** Channels pinned to mpv ("compatibility mode") — opened straight on mpv, bypassing ExoPlayer. Eagerly
+     *  collected so the routing decision in [ensurePlaying] always sees the current set. Keyed by stream URL. */
+    val forceMpvUrls: StateFlow<Set<String>> = forceMpvStore.urls
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     /** List ordering for this section (Playlist order vs A–Z), persisted in DataStore. */
     val sortMode: StateFlow<SettingsRepository.SortMode> = settings.sortLive
@@ -260,18 +268,78 @@ class LiveViewModel(
         _selected.value = key
     }
 
+    // --- Remember the last selected category (so reopening Live TV lands where you left off, #6) ---
+    private fun LiveKey.serialize(): String = when (this) {
+        LiveKey.Favorites -> "FAV"
+        LiveKey.History -> "HIST"
+        LiveKey.All -> "ALL"
+        is LiveKey.Folder -> "FOLDER:$id"
+    }
+
+    private fun parseLiveKey(s: String): LiveKey? = when {
+        s == "FAV" -> LiveKey.Favorites
+        s == "HIST" -> LiveKey.History
+        s == "ALL" -> LiveKey.All
+        s.startsWith("FOLDER:") -> s.removePrefix("FOLDER:").toLongOrNull()?.let { LiveKey.Folder(it) }
+        else -> null
+    }
+
+    init {
+        // Persist the selected category (debounced — the rail fires select() on focus as you scroll).
+        viewModelScope.launch {
+            _selected.drop(1).debounce(800).distinctUntilChanged().collect { settings.setLastLiveCategory(it.serialize()) }
+        }
+        // Restore it once at startup — but only while still on the default (don't yank a user who already
+        // navigated). A saved folder is honoured only once it actually exists in this profile's rail.
+        viewModelScope.launch {
+            val saved = parseLiveKey(settings.lastLiveCategory.first()) ?: return@launch
+            if (saved is LiveKey.Folder) {
+                val ok = kotlinx.coroutines.withTimeoutOrNull(5_000) {
+                    railItems.first { list -> list.any { it.key == saved } }
+                } != null
+                if (ok && _selected.value == LiveKey.All) _selected.value = saved
+            } else if (_selected.value == LiveKey.All) {
+                _selected.value = saved
+            }
+        }
+        // Persist the last focused/interacted channel (debounced), and restore it once at startup so opening
+        // Live TV lands focus back on it. Restore leaves the preview disarmed (no auto-preview on launch).
+        viewModelScope.launch {
+            _previewChannel.drop(1).filterNotNull().map { it.id }.debounce(800).distinctUntilChanged()
+                .collect { settings.setLastLiveChannelId(it) }
+        }
+        viewModelScope.launch {
+            val savedId = settings.lastLiveChannelId.first()
+            if (savedId > 0 && _previewChannel.value == null) {
+                ctx.first { it.profileId >= 0 }
+                channelDao.getById(savedId)?.let { if (_previewChannel.value == null) _previewChannel.value = it }
+            }
+        }
+    }
+
     fun setSearchQuery(query: String) {
         _search.value = query
     }
 
     fun onChannelFocused(channel: ChannelEntity) {
+        _previewArmed.value = true // a real user focus — the in-pane preview may now play
         _previewChannel.value = channel
     }
+
+    // The in-pane preview only plays once the user has actually focused a channel — so restoring the last
+    // focused channel on startup positions focus & the details pane WITHOUT auto-previewing on launch (#6).
+    private val _previewArmed = MutableStateFlow(false)
+    val previewArmed: StateFlow<Boolean> = _previewArmed.asStateFlow()
 
 
     /** In-pane preview playback (no history) — triggered by the UI after the focus settles. Runs on the
      *  lightweight ExoPlayer engine (fast HLS start), not mpv; the full/fullscreen player stays on mpv. */
     fun playPreview(channel: ChannelEntity) {
+        // Don't touch the engine while it's promoted to full-screen. Clicking OK before the in-pane preview's
+        // focus-delay fires would otherwise let this late preview call re-mute the now-full-screen stream
+        // (preview audio is off) — so full-screen would play with no sound. ensurePlaying() sets liveOnExo
+        // the instant OK is pressed, before this can run.
+        if (_liveOnExo.value) return
         // Already previewing this channel (e.g. re-focus)? Just re-apply the preview mute, no reload.
         if (previewEngine.currentUrl == channel.streamUrl &&
             previewEngine.state.value != tv.own.owntv.player.LivePreviewEngine.State.ERROR
@@ -291,6 +359,9 @@ class LiveViewModel(
     private var zapList: List<ChannelEntity> = emptyList()
     private val _canZap = MutableStateFlow(false)
     val canZap: StateFlow<Boolean> = _canZap.asStateFlow()
+    // The opened channel list, exposed so the in-player channel-list overlay can show & jump within it.
+    private val _zapChannels = MutableStateFlow<List<ChannelEntity>>(emptyList())
+    val zapChannels: StateFlow<List<ChannelEntity>> = _zapChannels.asStateFlow()
 
     /** True when full-screen is running on the **ExoPlayer** engine (a promoted preview) rather than mpv.
      *  The shell renders the ExoPlayer surface instead of mpv's when this is set. */
@@ -300,15 +371,30 @@ class LiveViewModel(
     /** Called when anything OTHER than a promoted live channel takes over full-screen (a movie/episode,
      *  catch-up, an EPG/search channel — all play on mpv). Clears the ExoPlayer flag so the shell renders
      *  mpv's surface (not the leftover live channel) and stops the preview so it doesn't hold a connection. */
+    /** Back out of full-screen to the Live screen: we're no longer full-screen on ExoPlayer, so the preview
+     *  pane may re-take the engine (and re-apply the preview mute) on the next focus. Keeps the stream
+     *  playing (no stop) — just clears the flag so [playPreview] works again. */
+    fun onFullscreenExited() {
+        _liveOnExo.value = false
+    }
+
     fun clearLiveOnExo() {
         exoOutcomeJob?.cancel()
         _liveOnExo.value = false
         previewEngine.stop()
     }
 
+    /** The most-recently-watched live channel for the active profile (for "resume last channel"). Waits
+     *  for the profile to be known, then reads the newest watch-history row. Null if there is none. */
+    suspend fun lastWatchedLiveChannel(): ChannelEntity? {
+        val pid = ctx.first { it.profileId >= 0 }.profileId
+        return channelDao.recentlyWatched(pid, 1).first().firstOrNull()
+    }
+
     /** Open a channel fullscreen, remembering [list] so the remote can zap up/down from here. */
     fun watchFullscreen(channel: ChannelEntity, list: List<ChannelEntity>) {
         zapList = list
+        _zapChannels.value = list
         _canZap.value = list.size > 1
         ensurePlaying(channel)
     }
@@ -333,6 +419,15 @@ class LiveViewModel(
     fun ensurePlaying(channel: ChannelEntity) {
         _previewChannel.value = channel
         timeshiftJob?.cancel(); tickJob?.cancel(); _timeshiftOffsetSec.value = null // normal live = not timeshifted
+        // Self-learning routing: a channel the user pinned to mpv skips ExoPlayer entirely (no artifacts/silent
+        // first), straight to the engine that plays it. Everyone else gets the fast ExoPlayer-first path.
+        val pinned = channel.streamUrl in forceMpvUrls.value
+        android.util.Log.i(ENGINE_TAG, "tune '${channel.name}' -> ${if (pinned) "mpv (pinned)" else "exoplayer"}")
+        if (pinned) startOnMpv(channel) else startOnExo(channel)
+        recordLiveHistory(channel)
+    }
+
+    private fun startOnExo(channel: ChannelEntity) {
         _liveOnExo.value = true
         player.stop() // free mpv (decoder/connection) if a previous full-screen used it
         if (previewEngine.currentUrl == channel.streamUrl) {
@@ -344,7 +439,27 @@ class LiveViewModel(
             )
         }
         watchExoOutcome(channel)
-        recordLiveHistory(channel)
+    }
+
+    /** Start [channel] on the full mpv engine (pinned "compatibility" channel, or an ExoPlayer fallback). */
+    private fun startOnMpv(channel: ChannelEntity) { viewModelScope.launch { fallbackToMpv(channel) } }
+
+    /** HUD "compatibility mode" toggle: pin/unpin the current channel to mpv and swap engines live. */
+    fun toggleForceMpv() {
+        val channel = _previewChannel.value ?: return
+        val turnOn = channel.streamUrl !in forceMpvUrls.value
+        android.util.Log.i(ENGINE_TAG, "compat toggle '${channel.name}' -> ${if (turnOn) "mpv" else "exoplayer"} (currentlyOnExo=${_liveOnExo.value})")
+        viewModelScope.launch {
+            forceMpvStore.set(channel.streamUrl, turnOn)
+            when {
+                turnOn && _liveOnExo.value -> fallbackToMpv(channel) // ExoPlayer → mpv now
+                !turnOn && !_liveOnExo.value -> {                    // mpv → ExoPlayer now
+                    player.stop()
+                    delay(500) // let mpv's decoder/surface release before ExoPlayer takes over
+                    if (_previewChannel.value?.streamUrl == channel.streamUrl) startOnExo(channel)
+                }
+            }
+        }
     }
 
     /** One-shot: hand [channel] to mpv if ExoPlayer can't play it fully — either it **errors** opening, or it
@@ -370,6 +485,7 @@ class LiveViewModel(
         _liveOnExo.value && _previewChannel.value?.streamUrl == channel.streamUrl
 
     private suspend fun fallbackToMpv(channel: ChannelEntity) {
+        android.util.Log.i(ENGINE_TAG, "starting mpv for '${channel.name}'")
         _liveOnExo.value = false            // shell flips to mpv's surface
         previewEngine.stop()
         delay(500)                          // let ExoPlayer's decoder release before mpv inits
@@ -587,6 +703,7 @@ class LiveViewModel(
     }
 
     private companion object {
+        const val ENGINE_TAG = "LiveEngine"
         val defaultRail = listOf(
             LiveRailItem(LiveKey.Favorites, "FAV", "Favorites", OwnTVIcon.STAR),
             LiveRailItem(LiveKey.History, "HIS", "History", OwnTVIcon.HISTORY),

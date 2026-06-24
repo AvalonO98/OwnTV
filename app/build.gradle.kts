@@ -18,8 +18,10 @@ android {
         minSdk = 26
         targetSdk = 36
         // CI injects these from the git tag (see .github/workflows/android.yml) so releases never
-        // need a manual edit here. The fallbacks are only used for local/debug builds.
-        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+        // need a manual edit here. The fallbacks are only used for local/debug builds — pinned HIGH
+        // (99999, mirroring versionName 99.99.99) so a local/debug APK is always "newer" than any
+        // published release and installs straight over it (no INSTALL_FAILED_VERSION_DOWNGRADE).
+        versionCode = (System.getenv("VERSION_CODE") ?: "99999").toInt()
         // CI injects VERSION_NAME from the git tag for releases. The fallback is only ever used by
         // LOCAL builds (i.e. debug), so we pin it to 99.99.99 — that way a dev build is always "newer"
         // than any published release and the in-app updater never offers an "update" while developing.

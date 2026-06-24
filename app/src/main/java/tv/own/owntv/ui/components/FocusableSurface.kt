@@ -55,13 +55,18 @@ fun FocusableSurface(
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
 
-    val scale by animateFloatAsState(if (focused) focusedScale else 1f, label = "focusScale")
+    val scale by animateFloatAsState(
+        if (focused) focusedScale else 1f,
+        animationSpec = tv.own.owntv.ui.theme.ownTvTween(140),
+        label = "focusScale",
+    )
     val container by animateColorAsState(
         when {
             focused -> focusedContainerColor
             selected -> selectedContainerColor
             else -> unfocusedContainerColor
         },
+        animationSpec = tv.own.owntv.ui.theme.ownTvTween(140),
         label = "focusContainer",
     )
     val showBorder = focused || selected

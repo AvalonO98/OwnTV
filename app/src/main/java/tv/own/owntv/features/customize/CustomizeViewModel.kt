@@ -121,6 +121,19 @@ class CustomizeViewModel(
         val index = current.indexOfFirst { it.key == row.key }
         val target = if (up) index - 1 else index + 1
         if (index < 0 || target < 0 || target > current.lastIndex) return
+        moveTo(current, index, target)
+    }
+
+    /** Jumps a category straight to the top or bottom of the list and persists the new order. */
+    fun moveToEdge(row: CustomizeCatRow, top: Boolean) {
+        val current = rows.value
+        val index = current.indexOfFirst { it.key == row.key }
+        val target = if (top) 0 else current.lastIndex
+        if (index < 0 || index == target) return
+        moveTo(current, index, target)
+    }
+
+    private fun moveTo(current: List<CustomizeCatRow>, index: Int, target: Int) {
         val reordered = current.toMutableList().apply {
             val item = removeAt(index)
             add(target, item)

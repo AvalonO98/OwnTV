@@ -73,6 +73,7 @@ fun OwnTVTheme(
     accent: AccentColor,
     systemInDarkTheme: Boolean,
     customAccent: String = "",
+    animationLevel: AnimationLevel = AnimationLevel.FULL,
     content: @Composable () -> Unit,
 ) {
     val useDark = when (themeMode) {
@@ -86,6 +87,7 @@ fun OwnTVTheme(
     CompositionLocalProvider(
         LocalOwnTVColors provides colors,
         LocalThemeMode provides themeMode,
+        LocalAnimationLevel provides animationLevel,
     ) {
         MaterialTheme(
             colorScheme = schemeFrom(colors),

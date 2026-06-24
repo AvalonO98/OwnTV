@@ -54,6 +54,7 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val progress by vm.progress.collectAsStateWithLifecycle()
     val refreshIds by vm.refreshSourceIds.collectAsStateWithLifecycle()
     val defaultId by vm.defaultSourceId.collectAsStateWithLifecycle()
+    val epgSync by vm.epgSync.collectAsStateWithLifecycle()
     val colors = OwnTVTheme.colors
 
     var showAdd by remember { mutableStateOf(false) }
@@ -140,7 +141,12 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 progress?.let { Text("${it.processed} items", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant) }
             }
             is SettingsViewModel.ImportState.Success -> {
-                LaunchedEffect(Unit) { showAdd = false; vm.resetImport() }
+                // Semi-auto EPG: ask → sync (with a live count, like the import) → done, before returning.
+                if (epgSync !is EpgSyncUi.Hidden) {
+                    EpgSyncDialog(state = epgSync, onSync = vm::syncPendingEpg, onDismiss = vm::dismissPendingEpg)
+                } else {
+                    LaunchedEffect(Unit) { showAdd = false; vm.resetImport() }
+                }
             }
             is SettingsViewModel.ImportState.Failed -> CenterStatus {
                 Text("Import failed", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)

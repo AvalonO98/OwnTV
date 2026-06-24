@@ -6,11 +6,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -50,6 +54,7 @@ import tv.own.owntv.features.shell.components.PreviewPane
 import tv.own.owntv.features.shell.components.RailCategory
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
+import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.PosterCard
 import tv.own.owntv.ui.components.ResumeDialog
@@ -75,6 +80,7 @@ fun MoviesScreen(
     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val sortMode by vm.sortMode.collectAsStateWithLifecycle()
+    val viewMode by vm.viewMode.collectAsStateWithLifecycle()
     val selectedMovie by vm.selectedMovie.collectAsStateWithLifecycle()
     val selectedProgress by vm.selectedProgress.collectAsStateWithLifecycle()
     val downloadStates by vm.downloadStates.collectAsStateWithLifecycle()
@@ -99,6 +105,7 @@ fun MoviesScreen(
     }
 
     val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
     val selFocus = remember { FocusRequester() }
     val firstItemFocus = remember { FocusRequester() }
     // Returning from the player: scroll to and focus the movie you just played (waits for the grid to load).
@@ -156,6 +163,14 @@ fun MoviesScreen(
                 )
                 Spacer(Modifier.width(10.dp))
                 SortChip(mode = sortMode, onToggle = vm::toggleSort, playlistLabel = "Provider")
+                Spacer(Modifier.width(10.dp))
+                // View mode (#10): poster wall vs a compact list (more titles at once).
+                tv.own.owntv.ui.components.OwnTVButton(
+                    label = viewMode.label,
+                    onClick = vm::toggleViewMode,
+                    icon = if (viewMode == SettingsRepository.VodViewMode.GRID) OwnTVIcon.MENU else OwnTVIcon.MOVIES,
+                    style = tv.own.owntv.ui.components.OwnTVButtonStyle.SECONDARY,
+                )
             }
             Spacer(Modifier.height(14.dp))
 
@@ -165,6 +180,28 @@ fun MoviesScreen(
                         if (searchQuery.isNotBlank()) "No movies found for “${searchQuery.trim()}”" else "No movies here.",
                         style = MaterialTheme.typography.bodyLarge, color = OwnTVTheme.colors.onSurfaceVariant,
                     )
+                }
+            } else if (viewMode == SettingsRepository.VodViewMode.LIST) {
+                LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(movies.itemCount) { index ->
+                        val movie = movies[index]
+                        if (movie != null) {
+                            MovieListRow(
+                                movie = movie,
+                                isFavorite = favoriteIds.contains(movie.id),
+                                modifier = when {
+                                    movie.id == selectedMovie?.id -> Modifier.focusRequester(selFocus)
+                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
+                                    else -> Modifier
+                                },
+                                onFocus = { vm.onMovieFocused(movie) },
+                                onClick = { startMovie(movie) },
+                            )
+                        }
+                    }
                 }
             } else {
                 LazyVerticalGrid(
@@ -316,4 +353,56 @@ private fun metaLine(movie: MovieEntity): String {
         parts.add(if (h > 0) "${h}h ${m}m" else "${m}m")
     }
     return parts.joinToString("  •  ")
+}
+
+/** Compact one-line row used by the List view mode — fits many titles on screen at once (#10). */
+@Composable
+private fun MovieListRow(
+    movie: MovieEntity,
+    isFavorite: Boolean,
+    onFocus: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OwnTVTheme.colors
+    FocusableSurface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) { focused ->
+        LaunchedEffect(focused) { if (focused) onFocus() }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier.size(width = 44.dp, height = 62.dp).clip(RoundedCornerShape(6.dp)).background(colors.surfaceContainerLowest),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (!movie.posterUrl.isNullOrBlank()) {
+                    AsyncImage(model = movie.posterUrl, contentDescription = null, modifier = Modifier.fillMaxSize())
+                } else {
+                    OwnTVIcon(OwnTVIcon.MOVIES, tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    movie.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (focused) colors.primary else colors.onSurface,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                val meta = metaLine(movie)
+                if (meta.isNotBlank()) {
+                    Text(meta, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
+                }
+            }
+            if (isFavorite) {
+                OwnTVIcon(OwnTVIcon.STAR, tint = colors.primary, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
 }

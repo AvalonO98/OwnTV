@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
@@ -118,6 +119,7 @@ private fun SeriesGrid(
     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val sortMode by vm.sortMode.collectAsStateWithLifecycle()
+    val viewMode by vm.viewMode.collectAsStateWithLifecycle()
     val selectedSeries by vm.selectedSeries.collectAsStateWithLifecycle()
     val series = vm.series.collectAsLazyPagingItems()
 
@@ -126,6 +128,7 @@ private fun SeriesGrid(
     val gridSelFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val firstItemFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     // Back from a show's episodes: scroll the grid to the poster you opened, then focus it. It may be
     // far down and not composed, so without scrolling the focus request fails and focus falls to the
@@ -177,6 +180,13 @@ private fun SeriesGrid(
                 SearchBar(query = searchQuery, onQueryChange = vm::setSearchQuery, placeholder = "Search ${selectedItem?.title ?: "series"}…", modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(10.dp))
                 SortChip(mode = sortMode, onToggle = vm::toggleSort, playlistLabel = "Provider")
+                Spacer(Modifier.width(10.dp))
+                tv.own.owntv.ui.components.OwnTVButton(
+                    label = viewMode.label,
+                    onClick = vm::toggleViewMode,
+                    icon = if (viewMode == SettingsRepository.VodViewMode.GRID) OwnTVIcon.MENU else OwnTVIcon.SERIES,
+                    style = tv.own.owntv.ui.components.OwnTVButtonStyle.SECONDARY,
+                )
             }
             Spacer(Modifier.height(14.dp))
 
@@ -186,6 +196,28 @@ private fun SeriesGrid(
                         if (searchQuery.isNotBlank()) "No series found for “${searchQuery.trim()}”" else "No series here.",
                         style = MaterialTheme.typography.bodyLarge, color = OwnTVTheme.colors.onSurfaceVariant,
                     )
+                }
+            } else if (viewMode == SettingsRepository.VodViewMode.LIST) {
+                LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(series.itemCount) { index ->
+                        val s = series[index]
+                        if (s != null) {
+                            SeriesListRow(
+                                series = s,
+                                isFavorite = favoriteIds.contains(s.id),
+                                modifier = when {
+                                    s.id == selectedSeries?.id -> Modifier.focusRequester(gridSelFocus)
+                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
+                                    else -> Modifier
+                                },
+                                onFocus = { vm.onSeriesFocused(s) },
+                                onClick = { vm.openSeries(s) },
+                            )
+                        }
+                    }
                 }
             } else {
                 LazyVerticalGrid(
@@ -451,6 +483,61 @@ private fun EpisodeRow(episode: EpisodeEntity, lastWatched: Boolean, onClick: ()
                 )
             }
             OwnTVIcon(OwnTVIcon.PLAY, tint = if (focused) colors.primary else colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
+/** Compact one-line row used by the List view mode — fits many series on screen at once (#10). */
+@Composable
+private fun SeriesListRow(
+    series: SeriesEntity,
+    isFavorite: Boolean,
+    onFocus: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = OwnTVTheme.colors
+    FocusableSurface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) { focused ->
+        LaunchedEffect(focused) { if (focused) onFocus() }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier.size(width = 44.dp, height = 62.dp).clip(RoundedCornerShape(6.dp)).background(colors.surfaceContainerLowest),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (!series.posterUrl.isNullOrBlank()) {
+                    AsyncImage(model = series.posterUrl, contentDescription = null, modifier = Modifier.fillMaxSize())
+                } else {
+                    OwnTVIcon(OwnTVIcon.SERIES, tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    series.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (focused) colors.primary else colors.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val meta = buildList {
+                    series.year?.let { add(it.toString()) }
+                    series.rating?.takeIf { it > 0 }?.let { add("★ %.1f".format(it)) }
+                }.joinToString("  •  ")
+                if (meta.isNotBlank()) {
+                    Text(meta, style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant, maxLines = 1)
+                }
+            }
+            if (isFavorite) {
+                OwnTVIcon(OwnTVIcon.STAR, tint = colors.primary, modifier = Modifier.size(18.dp))
+            }
         }
     }
 }

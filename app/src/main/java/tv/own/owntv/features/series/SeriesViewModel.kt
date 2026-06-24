@@ -91,6 +91,18 @@ class SeriesViewModel(
         }
     }
 
+    val viewMode: StateFlow<SettingsRepository.VodViewMode> = settings.vodViewMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.VodViewMode.GRID)
+
+    fun toggleViewMode() {
+        viewModelScope.launch {
+            settings.setVodViewMode(
+                if (viewMode.value == SettingsRepository.VodViewMode.GRID) SettingsRepository.VodViewMode.LIST
+                else SettingsRepository.VodViewMode.GRID,
+            )
+        }
+    }
+
     private val _selected = MutableStateFlow<LiveKey>(LiveKey.All)
     val selectedKey: StateFlow<LiveKey> = _selected.asStateFlow()
 

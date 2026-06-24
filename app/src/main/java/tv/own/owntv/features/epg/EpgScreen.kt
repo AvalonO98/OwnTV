@@ -56,6 +56,7 @@ import androidx.tv.material3.Text
 import tv.own.owntv.core.database.entity.ChannelEntity
 import tv.own.owntv.core.database.entity.EpgProgrammeEntity
 import tv.own.owntv.features.settings.data.SettingsRepository
+import tv.own.owntv.ui.components.longPressMenuGuard
 import tv.own.owntv.ui.components.ErrorState
 import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVButton
@@ -98,6 +99,9 @@ fun EpgScreen(
     val review by vm.review.collectAsStateWithLifecycle()
     val matchSummary by vm.matchSummary.collectAsStateWithLifecycle()
     val sortGuide by vm.sortGuide.collectAsStateWithLifecycle()
+    val categoryFilter by vm.categoryFilter.collectAsStateWithLifecycle()
+    val guideCategories by vm.guideCategories.collectAsStateWithLifecycle()
+    var showCategoryPicker by remember { mutableStateOf(false) }
     val colors = OwnTVTheme.colors
     val hScroll = rememberScrollState()
     val rowListState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -221,8 +225,17 @@ fun EpgScreen(
             }
             Spacer(Modifier.weight(1f))
             // Guide sort: A–Z / Provider / Live TV (mirrors Live) / Catch-up (archive first; hidden when none).
-            val sortLabel = if (sortGuide == SettingsRepository.GuideSort.CATCHUP && state.catchupCount == 0)
-                SettingsRepository.GuideSort.LIVE_TV.label else sortGuide.label
+            val sortLabel = when {
+                sortGuide == SettingsRepository.GuideSort.CATCHUP && state.catchupCount == 0 -> SettingsRepository.GuideSort.LIVE_TV.label
+                sortGuide == SettingsRepository.GuideSort.FAVORITES && state.favoriteCount == 0 -> SettingsRepository.GuideSort.LIVE_TV.label
+                else -> sortGuide.label
+            }
+            // Category filter (#8): narrow the guide to one group instead of all channels at once.
+            if (guideCategories.isNotEmpty()) {
+                val catLabel = categoryFilter?.let { id -> guideCategories.firstOrNull { it.id == id }?.name } ?: "All"
+                OwnTVButton("Category: $catLabel", onClick = { showCategoryPicker = true }, icon = OwnTVIcon.MENU, style = OwnTVButtonStyle.SECONDARY)
+                Spacer(Modifier.width(12.dp))
+            }
             OwnTVButton("Sort: $sortLabel", onClick = vm::cycleGuideSort, icon = OwnTVIcon.SORT, style = OwnTVButtonStyle.SECONDARY)
             Spacer(Modifier.width(12.dp))
             // Smart-match: auto-link channels whose tvg-id doesn't match the EPG feed, by name (#13).
@@ -365,6 +378,17 @@ fun EpgScreen(
             onDone = vm::clearReview,
         )
     }
+
+    if (showCategoryPicker) {
+        tv.own.owntv.features.settings.PickerDialog(
+            title = "Guide category",
+            options = listOf("ALL" to "All categories") + guideCategories.map { it.id.toString() to it.name },
+            selected = categoryFilter?.toString() ?: "ALL",
+            onSelect = { vm.setCategoryFilter(it.toLongOrNull()); showCategoryPicker = false },
+            onDismiss = { showCategoryPicker = false },
+            searchable = true,
+        )
+    }
 }
 
 /**
@@ -456,7 +480,8 @@ private fun EpgMatchChooserDialog(
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(60); runCatching { firstFocus.requestFocus() } }
 
     Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)).focusGroup(),
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)).focusGroup()
+            .longPressMenuGuard(), // long-press OK is still held — don't auto-click Auto-match
         contentAlignment = Alignment.Center,
     ) {
         Column(Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(24.dp)) {

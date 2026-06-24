@@ -2,7 +2,6 @@ package tv.own.owntv.features.shell.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
@@ -85,17 +84,9 @@ fun CategoryRail(
         if (q.isEmpty()) categories.indices.toList()
         else categories.indices.filter { categories[it].fullName.contains(q, ignoreCase = true) }
     }
-    // Widen/expand only after focus settles (~120ms); collapse instantly. A transient focus blip on the
-    // rail (focus passing through during a screen transition) would otherwise flash it open then closed.
-    var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(hasFocus) {
-        if (hasFocus) { kotlinx.coroutines.delay(120); expanded = true } else expanded = false
-    }
-    val width by animateDpAsState(
-        targetValue = if (expanded) Dimens.RailWidthExpanded else Dimens.RailWidth,
-        animationSpec = tween(150),
-        label = "railWidth",
-    )
+    // Phase 2 — the rail is a FIXED full-label column (no collapse/abbreviation overlay), so it never
+    // reflows the layout on the D-pad. Always "expanded" = full category names.
+    val expanded = true
 
     val listState = rememberLazyListState()
     val selectedFocus = remember { FocusRequester() }
@@ -109,15 +100,14 @@ fun CategoryRail(
         }
     }
 
-    // Fixed-width slot in the screen's Row; the (possibly wider) rail overflows it to the right,
-    // drawn above the content pane.
-    Box(modifier = modifier.fillMaxHeight().width(Dimens.RailWidth).zIndex(1f)) {
+    // Fixed full-label column in the screen's Row — a real grid column (no overlay), so it takes its own
+    // space and nothing reflows when focus enters/leaves it.
+    Box(modifier = modifier.fillMaxHeight().width(Dimens.RailWidthFixed)) {
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxHeight()
-                .wrapContentWidth(align = Alignment.Start, unbounded = true)
-                .width(width)
+                .fillMaxWidth()
                 .background(colors.panel)
                 .onFocusChanged {
                     // Spatial D-pad entry would land on whatever pill is horizontally aligned —
@@ -212,6 +202,7 @@ private fun RailPill(
             focused -> colors.card
             else -> Color.Transparent
         },
+        animationSpec = tv.own.owntv.ui.theme.ownTvTween(140),
         label = "railPillBg",
     )
     val fg by animateColorAsState(
@@ -220,6 +211,7 @@ private fun RailPill(
             focused -> colors.accent
             else -> colors.textSecondary
         },
+        animationSpec = tv.own.owntv.ui.theme.ownTvTween(140),
         label = "railPillFg",
     )
 
@@ -267,7 +259,7 @@ private fun RailPill(
                 color = fg,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = if (focused) FontWeight.Bold else FontWeight.Medium,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }

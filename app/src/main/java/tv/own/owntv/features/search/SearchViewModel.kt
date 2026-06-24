@@ -21,11 +21,13 @@ import kotlinx.coroutines.launch
 import tv.own.owntv.core.customize.CustomizationStore
 import tv.own.owntv.core.customize.CustomizeKeys
 import tv.own.owntv.core.database.dao.ChannelDao
+import tv.own.owntv.core.database.dao.FavoriteDao
 import tv.own.owntv.core.database.dao.HistoryDao
 import tv.own.owntv.core.database.dao.MovieDao
 import tv.own.owntv.core.database.dao.SeriesDao
 import tv.own.owntv.core.database.dao.SourceDao
 import tv.own.owntv.core.database.entity.ChannelEntity
+import tv.own.owntv.core.database.entity.FavoriteEntity
 import tv.own.owntv.core.database.entity.MovieEntity
 import tv.own.owntv.core.database.entity.SeriesEntity
 import tv.own.owntv.core.database.entity.WatchHistoryEntity
@@ -35,7 +37,7 @@ import tv.own.owntv.player.OwnTVPlayer
 
 /** Combined results of a global query (each list bounded). */
 data class SearchResults(
-    val channels: List<ChannelEntity> = emptyList(),
+    val channels: List<tv.own.owntv.core.database.dao.ChannelSearchResult> = emptyList(),
     val movies: List<MovieEntity> = emptyList(),
     val series: List<SeriesEntity> = emptyList(),
 ) {
@@ -51,6 +53,7 @@ class SearchViewModel(
     private val sourceDao: SourceDao,
     private val settings: SettingsRepository,
     private val customize: CustomizationStore,
+    private val favoriteDao: FavoriteDao,
     val player: OwnTVPlayer,
 ) : ViewModel() {
 
@@ -88,12 +91,31 @@ class SearchViewModel(
         // Respect this profile's customizations: hidden channels never surface, renames are shown.
         val cust = customize.observe(ctx.value.profileId, MediaType.LIVE).first()
         return SearchResults(
-            channels = channelDao.searchList(q, ids, LIMIT)
-                .filter { CustomizeKeys.channel(it) !in cust.hiddenItems }
-                .map { ch -> cust.itemNames[CustomizeKeys.channel(ch)]?.let { ch.copy(name = it) } ?: ch },
+            channels = channelDao.searchListDetailed(q, ids, LIMIT)
+                .filter { CustomizeKeys.channel(it.channel) !in cust.hiddenItems }
+                .map { row -> cust.itemNames[CustomizeKeys.channel(row.channel)]?.let { row.copy(channel = row.channel.copy(name = it)) } ?: row },
             movies = movieDao.searchList(q, ids, LIMIT),
             series = seriesDao.searchList(q, ids, LIMIT),
         )
+    }
+
+    /** Live channels this profile has favourited — so a search result can show a star and toggle it. */
+    val favoriteChannelIds: StateFlow<Set<Long>> = ctx
+        .flatMapLatest { favoriteDao.observeFavoriteIds(it.profileId, MediaType.LIVE) }
+        .map { it.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    /** Long-press a channel result to add/remove it from Favorites (no need to open Live TV first). */
+    fun toggleFavoriteChannel(channel: ChannelEntity) {
+        viewModelScope.launch {
+            val pid = ctx.value.profileId
+            if (pid < 0) return@launch
+            if (favoriteChannelIds.value.contains(channel.id)) {
+                favoriteDao.remove(pid, MediaType.LIVE, channel.id)
+            } else {
+                favoriteDao.add(FavoriteEntity(profileId = pid, mediaType = MediaType.LIVE, itemId = channel.id))
+            }
+        }
     }
 
     fun playChannel(channel: ChannelEntity) {

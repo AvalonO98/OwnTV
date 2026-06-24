@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,6 +50,7 @@ import tv.own.owntv.core.database.entity.ChannelEntity
 import tv.own.owntv.features.shell.components.CategoryRail
 import tv.own.owntv.features.shell.components.PreviewPane
 import tv.own.owntv.features.shell.components.RailCategory
+import tv.own.owntv.ui.components.longPressMenuGuard
 import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
@@ -77,6 +79,7 @@ fun LiveScreen(
     val count by vm.count.collectAsStateWithLifecycle()
     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
     val previewChannel by vm.previewChannel.collectAsStateWithLifecycle()
+    val previewArmed by vm.previewArmed.collectAsStateWithLifecycle()
     val nowNext by vm.nowNext.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val sortMode by vm.sortMode.collectAsStateWithLifecycle()
@@ -91,8 +94,10 @@ fun LiveScreen(
 
     // In-pane preview: play the focused channel after the focus settles (700ms). Disabled while the
     // fullscreen/mini player owns the surface (previewEnabled=false) to avoid two surfaces fighting.
-    LaunchedEffect(previewChannel?.id, effectivePreview) {
-        if (!effectivePreview) return@LaunchedEffect
+    LaunchedEffect(previewChannel?.id, effectivePreview, previewArmed) {
+        // previewArmed gates the case where the last channel was restored on startup — we don't auto-preview
+        // it until the user actually focuses a channel (then it plays normally).
+        if (!effectivePreview || !previewArmed) return@LaunchedEffect
         val ch = previewChannel ?: return@LaunchedEffect
         delay(700)
         vm.playPreview(ch)
@@ -104,6 +109,7 @@ fun LiveScreen(
     var renaming by remember { mutableStateOf<ChannelEntity?>(null) }
     var matchingEpg by remember { mutableStateOf<ChannelEntity?>(null) }
     var catchupChannel by remember { mutableStateOf<ChannelEntity?>(null) }
+    var contextChannel by remember { mutableStateOf<ChannelEntity?>(null) } // long-press quick menu
     // Returning from fullscreen: scroll to and focus the channel you were watching (waits for the list to load).
     LaunchedEffect(restoreFocus, channels.itemCount) {
         if (!restoreFocus || channels.itemCount == 0) return@LaunchedEffect
@@ -135,11 +141,11 @@ fun LiveScreen(
             onFocused = { if (previewEnabled) vm.stopPreview() },
         )
 
-        // Layer 3 — header + channel list
+        // Layer 3 — header + channel list (fixed-width column; the preview pane fills the rest)
         Column(
             modifier = Modifier
-                .weight(1.4f)
-                .fillMaxSize()
+                .width(Dimens.ChannelListWidth)
+                .fillMaxHeight()
                 // Entering this pane (from the rail or the preview) must land on a channel row, never
                 // the search bar: prefer the last-focused channel, else the first row. onEnter fires
                 // only for directional entry from outside (internal moves don't re-trigger it).
@@ -201,6 +207,7 @@ fun LiveScreen(
                                     vm.watchFullscreen(channel, channels.itemSnapshotList.items.filterNotNull())
                                     onFullscreen()
                                 },
+                                onLongClick = { contextChannel = channel },
                             )
                         }
                     }
@@ -254,6 +261,21 @@ fun LiveScreen(
             onDismiss = { matchingEpg = null },
         )
     }
+
+    // Long-press a channel → quick actions (favourite, rename, hide, match EPG, catch-up).
+    contextChannel?.let { ch ->
+        ChannelContextMenu(
+            channelName = ch.name,
+            isFavorite = favoriteIds.contains(ch.id),
+            hasCatchup = ch.catchup,
+            onToggleFavorite = { vm.toggleFavorite(ch); contextChannel = null },
+            onRename = { renaming = ch; contextChannel = null },
+            onHide = { vm.hideChannel(ch); contextChannel = null },
+            onMatchEpg = { matchingEpg = ch; contextChannel = null },
+            onCatchup = { catchupChannel = ch; contextChannel = null },
+            onDismiss = { contextChannel = null },
+        )
+    }
 }
 
 @Composable
@@ -262,11 +284,13 @@ private fun ChannelRow(
     isFavorite: Boolean,
     onFocus: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = OwnTVTheme.colors
     FocusableSurface(
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier
             .fillMaxWidth()
             .onFocusChanged { if (it.hasFocus) onFocus() },
@@ -290,13 +314,56 @@ private fun ChannelRow(
             }
             Text(
                 channel.name,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleSmall,
                 color = if (focused) colors.primary else colors.onSurface,
                 modifier = Modifier.weight(1f),
             )
             if (isFavorite) {
                 OwnTVIcon(OwnTVIcon.STAR, tint = colors.favorite, filled = true, modifier = Modifier.size(20.dp))
             }
+        }
+    }
+}
+
+/** Long-press quick actions for a Live channel (favourite / rename / hide / match EPG / catch-up). */
+@Composable
+private fun ChannelContextMenu(
+    channelName: String,
+    isFavorite: Boolean,
+    hasCatchup: Boolean,
+    onToggleFavorite: () -> Unit,
+    onRename: () -> Unit,
+    onHide: () -> Unit,
+    onMatchEpg: () -> Unit,
+    onCatchup: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = OwnTVTheme.colors
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    androidx.activity.compose.BackHandler { onDismiss() }
+    Box(
+        modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.7f))
+            .longPressMenuGuard(), // the long-press OK is still held — don't let it auto-click a menu item
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(channelName, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            OwnTVButton(
+                if (isFavorite) "Remove from Favourites" else "Add to Favourites",
+                onClick = onToggleFavorite, style = OwnTVButtonStyle.SECONDARY, icon = OwnTVIcon.STAR,
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            )
+            OwnTVButton("Rename", onClick = onRename, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
+            OwnTVButton("Hide channel", onClick = onHide, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
+            OwnTVButton("Match EPG", onClick = onMatchEpg, style = OwnTVButtonStyle.SECONDARY, icon = OwnTVIcon.EPG, modifier = Modifier.fillMaxWidth())
+            if (hasCatchup) OwnTVButton("Catch-up", onClick = onCatchup, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(4.dp))
+            OwnTVButton("Close", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
         }
     }
 }

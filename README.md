@@ -71,6 +71,11 @@ Scan to join from your phone:
 - **Channel zapping** — while watching fullscreen with the controls hidden, **D-pad Up/Down** (plus
   **CH+/CH−** and the **media ⏮/⏭** keys) switch channels and wrap around at the ends, so remotes
   without dedicated channel buttons (e.g. Fire TV) can zap too.
+- **In-player channel list** — press **Left** (with the controls hidden) to slide a **channel list over the
+  video** and pick a channel visually without leaving full-screen; the current one is highlighted, Back or
+  Left again closes it.
+- **Restores after the screensaver** — a paused movie/episode left long enough for the TV's screensaver is
+  brought back **paused at the exact spot**, so pressing Play just resumes instead of doing nothing.
 - Large demuxer cache for smooth 4K/8K streams; **HDR passthrough** when the video and TV support it.
 - **Surround sound** (**off by default — opt-in**) — leave it off on TV speakers / stereo soundbars for a
   clean stereo downmix; turn it **on** with a 5.1/7.1 receiver to decode **Dolby (AC-3/E-AC-3) and DTS** to
@@ -78,6 +83,17 @@ Scan to join from your phone:
   built-in safety net auto-falls-back to stereo, so playback never breaks.
 - **Image-based subtitles** (PGS/VOBSUB/DVB) on movies & series display on their own layer — keeping the
   video on the smooth zero-copy/HDR path — alongside the usual text (SRT/ASS) subtitles.
+- **Closed captions (CC) on Live TV** — channels that embed **CEA-608/708** captions in the video stream
+  (e.g. many US channels like HBO/Showtime/Cinemax) now expose a selectable caption track in the **Subtitles**
+  menu, instead of showing only "Off".
+- **Per-channel compatibility mode** — if a live channel shows artifacts or won't play right on the fast
+  engine, the **gear** in the player controls pins that channel to the **mpv** engine. It's **remembered per
+  channel**, so it opens cleanly every time after — while every other channel keeps the near-instant start.
+- **Stream info overlay** — an **info** button in the player shows a live technical readout of the stream:
+  codec · resolution · fps · bit-depth, HDR type, bitrate, decoder (hardware/software · direct), audio
+  codec/channels/rate, buffer & dropped frames, and the (credential-masked) source. Works on both engines.
+- **Volume boost to 150%** — for movies, series and mpv-played channels, the volume can go **above 100%**
+  (Kodi-style amplification, capped at 150% with a soft limiter) for quiet streams.
 - **Mini-player / PiP** — dock a movie, episode **or live channel** to a corner and keep browsing
   (it keeps streaming across the whole app); selecting another channel updates the docked window,
   and you can expand or close it.
@@ -96,13 +112,26 @@ Scan to join from your phone:
   so a channel named "…4K" that's actually 1080p can't fool you. The preview plays on the **ExoPlayer**
   engine for near-instant pictures while scrolling, and pressing OK **promotes that same stream to
   full-screen** with no reload — instant. (mpv takes over only for streams ExoPlayer can't open.)
-- Folder rail with section-specific **Favorites** and **History** — it expands on focus to show **full
-  category names**, with a **category search box** at the top to filter hundreds of groups by name.
-  Inline per-folder search and a cross-section **global search** too — all TV-style: search bars take
-  focus like any control and only open the keyboard on **OK**.
+- **Fixed, roomy layout** — a stable grid (slim **icon nav** · **full-label category column** · content list ·
+  preview) that **never expands or collapses as you move the D-pad**, so nothing jumps around (and it feels
+  noticeably faster on lower-end boxes). The profile avatar stays pinned top-left — **click to switch
+  profiles**, long-press to change your picture.
+- Folder rail with section-specific **Favorites** and **History** — **full category names** always shown, with
+  a **category search box** to filter hundreds of groups by name. Inline per-folder search and a cross-section
+  **global search** too — all TV-style: search bars take focus like any control and only open the keyboard on **OK**.
 - **Sort toggle** per section: your **playlist's own order** or **A–Z** (Live TV defaults to playlist order).
-- **Customize everything (per profile):** hide, rename & reorder categories (including **hide/show a whole
-  range at once** via long-press); hide & rename channels — and it all survives re-syncs.
+  Movies & Series also have a **Grid / List** view toggle — switch the poster wall to a compact list to see
+  many more titles at a glance.
+- **Customize everything (per profile):** hide, rename & reorder categories (move one step or **jump to the
+  top/bottom**, including **hide/show a whole range at once** via long-press); hide & rename channels — and it
+  all survives re-syncs.
+- **Global search** shows **detailed channel results** — each carries its **category · channel number** so
+  near-identical feeds (several "ABC" / "Sky Sports") are easy to tell apart — and can favourite as it finds:
+  **long-press a channel result** to add/remove it from Favorites without opening Live TV first.
+- **Picks up where you left off** — Live TV reopens on the **category** you last had selected and lands focus
+  on the **last channel** you were on. A **per-profile Startup** setting controls where each profile opens:
+  **Home**, the **last channel** you watched, or **Live TV on Favorites** (so one profile lands on its
+  favourites while another boots straight into its channel).
 - Built for scale — tested with ~50k channels / ~168k movies via streaming import and Paging 3.
 
 ### 🗓️ EPG
@@ -120,7 +149,11 @@ Scan to join from your phone:
   manually. All matches are per profile and survive re-syncs.
 - **Two-stage guide navigation** — press **Right** on a channel to select its **whole programme row**,
   then **OK** to browse programmes with Left/Right (Up/Down jumps channels at the same time), plus a
-  **sort** button (A–Z / Provider / Live TV / Catch-up).
+  **sort/filter** button (A–Z / Provider / Live TV / Catch-up / **Favorites**) and a **Category** filter
+  (with a search box) to view just one group at a time instead of every channel at once.
+- **Fast & resilient** — the Guide is **pre-loaded in the background** so it opens instantly; syncs are far
+  lighter (only **your** channels' programmes are stored, not the whole feed — public XMLTV feeds often carry
+  10–20× more); and a malformed feed or one bad `<programme>` tag no longer aborts the entire guide.
 - **Multiple EPG sources** — add any number of XMLTV feeds in **Settings → EPG Sources** (edit /
   delete / re-sync); they merge into the guide. EPG is **opt-in** — importing a playlist doesn't pull its
   guide automatically (which kept imports fast); when you add a guide, the form **pre-fills the playlist's
@@ -139,6 +172,10 @@ Scan to join from your phone:
 ### 🎨 Personalization & settings
 - Material 3 theme (AMOLED dark / light / system), **any accent color** — presets, a palette, or an
   exact **hex code** (the whole theme is generated from it) — UI zoom, per-profile avatars.
+- **Animations setting** (Full / Reduced / Off) to tone down or disable motion — handy on lower-end TV boxes
+  where it can make fast menu navigation feel snappier.
+- **Clear watch history** per profile — wipe the recently-watched / *continue watching* rows, **all of it or
+  just Live TV / Movies / Series**, without touching playlists, favorites or downloads.
 - **Video Player** settings: hardware decoding, default zoom, subtitle size & language, audio sync.
 - **Complete Backup & Restore** — one file covers profiles, sources, customizations, **favorites,
   watch history, and resume positions** — and you **choose what to include** on export and what to
@@ -155,6 +192,10 @@ Scan to join from your phone:
   and fast preview-scrolling coalesces loads so only the channel you land on is opened.
 - **Connection-friendly**: preview → fullscreen reuses the same stream (no reconnect — kind to strict
   1-connection providers), and a dropped live stream **auto-reconnects** before showing an error + Retry.
+- **Resilient imports** — a provider that errors on its full Movies/Series list (some return a non-standard
+  **HTTP 512** on the giant bulk response) no longer aborts the whole import: it automatically retries that
+  section **one category at a time**, and if a section still won't load it keeps your channels rather than
+  failing outright. Credentials are never shown in error messages.
 - Offline detection with a banner, and friendly, offline-aware error messages on import/sync/guide.
 
 ---
@@ -310,6 +351,23 @@ Then add repo Secrets (*Settings → Secrets and variables → Actions*): `KEYST
 
 Contributions, bug reports, and ideas are welcome — open an issue or a pull request. Please keep the
 project's player-only, bring-your-own-source positioning, and match the existing code style.
+
+## 💛 Support the project
+
+OwnTV is — and will **always be** — completely **free, 100% open-source, and ad-free. Forever.** ❤️ No
+paywalls, no "Pro" tier, no catch.
+
+It's a passion project built in my spare time. If it's made your TV a little nicer and you'd like to say
+thanks or **buy me a coffee**, a small **PayPal** tip is hugely appreciated — but it's **100% optional**, the
+app stays free for everyone no matter what. 🙂
+
+### ☕ [paypal.me/AshiqHasan](https://paypal.me/AshiqHasan)
+
+Scan to donate from your phone:
+
+<a href="https://paypal.me/AshiqHasan"><img src="extras/paypal_qr.jpg" alt="Scan to donate via PayPal" width="170"></a>
+
+Thank you for using OwnTV! 🙏
 
 ## ⚖️ Legal
 

@@ -333,11 +333,20 @@ internal fun PickerDialog(
     selected: String,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
+    searchable: Boolean = false,
 ) {
     val colors = OwnTVTheme.colors
     val fr = remember { FocusRequester() }
-    val selIndex = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)
-    LaunchedEffect(Unit) { runCatching { fr.requestFocus() } }
+    val searchFr = remember { FocusRequester() }
+    var query by remember { mutableStateOf("") }
+    // When searchable, filter the option labels live (e.g. finding a category among hundreds).
+    val shown = if (searchable && query.isNotBlank()) {
+        options.filter { it.second.contains(query.trim(), ignoreCase = true) }
+    } else {
+        options
+    }
+    val selIndex = shown.indexOfFirst { it.first == selected }.coerceAtLeast(0)
+    LaunchedEffect(Unit) { runCatching { (if (searchable) searchFr else fr).requestFocus() } }
     BackHandler { onDismiss() }
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
         Column(
@@ -345,8 +354,17 @@ internal fun PickerDialog(
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
             Spacer(Modifier.height(16.dp))
+            if (searchable) {
+                tv.own.owntv.ui.components.SearchBar(
+                    query = query,
+                    onQueryChange = { query = it },
+                    placeholder = "Search…",
+                    modifier = Modifier.fillMaxWidth().focusRequester(searchFr),
+                )
+                Spacer(Modifier.height(12.dp))
+            }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                itemsIndexed(options, key = { _, o -> o.first }) { index, (value, label) ->
+                itemsIndexed(shown, key = { _, o -> o.first }) { index, (value, label) ->
                     val isSel = value == selected
                     FocusableSurface(
                         onClick = { onSelect(value) },

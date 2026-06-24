@@ -7,6 +7,7 @@ import coil3.SingletonImageLoader
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
@@ -25,6 +26,12 @@ class OwnTVApp : Application(), SingletonImageLoader.Factory {
             androidLogger(if (BuildConfig.DEBUG) Level.ERROR else Level.NONE)
             androidContext(this@OwnTVApp)
             modules(appModule, databaseModule, dataModule, playerModule)
+        }
+        // Build the EPG Guide read-index once, in the background, for users who already have EPG synced
+        // (new EPG syncs ensure it themselves). It's permanent + auto-maintained, so this is a one-time
+        // build then an instant no-op on every later launch.
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            runCatching { GlobalContext.get().get<tv.own.owntv.core.repository.EpgRepository>().ensureEpgIndexes() }
         }
     }
 

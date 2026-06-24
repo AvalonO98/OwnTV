@@ -36,7 +36,24 @@ class SetupViewModel(
     private val settings: SettingsRepository,
     private val connectivity: ConnectivityObserver,
     private val importFinalizer: tv.own.owntv.core.sync.ImportFinalizer,
+    private val epgRepository: tv.own.owntv.core.repository.EpgRepository,
+    private val epgSourceStore: tv.own.owntv.core.epg.EpgSourceStore,
 ) : ViewModel() {
+
+    // Semi-auto EPG: after the first playlist imports, offer a one-tap guide sync (with a live count) if it
+    // has a guide feed.
+    private var pendingEpgSource: SourceEntity? = null
+    private val _epgSync = MutableStateFlow<tv.own.owntv.features.settings.EpgSyncUi>(tv.own.owntv.features.settings.EpgSyncUi.Hidden)
+    val epgSync: StateFlow<tv.own.owntv.features.settings.EpgSyncUi> = _epgSync.asStateFlow()
+
+    fun syncPendingEpg() {
+        val src = pendingEpgSource ?: return
+        viewModelScope.launch {
+            tv.own.owntv.features.settings.runSemiAutoEpgSync(src, epgRepository, epgSourceStore) { _epgSync.value = it }
+        }
+    }
+
+    fun dismissPendingEpg() { pendingEpgSource = null; _epgSync.value = tv.own.owntv.features.settings.EpgSyncUi.Hidden }
 
     sealed interface ImportState {
         data object Idle : ImportState
@@ -106,6 +123,10 @@ class SetupViewModel(
                         // Just the playlist content — EPG is added separately (Settings → EPG sources).
                         val counts = importFinalizer.finalize(source)
                         _state.value = ImportState.Success(counts.summary(includeEpg = false))
+                        if (epgRepository.guideUrl(source) != null) {
+                            pendingEpgSource = source
+                            _epgSync.value = tv.own.owntv.features.settings.EpgSyncUi.Ask(source.name)
+                        }
                     }
                     is SyncResult.Failed -> _state.value = ImportState.Failed(friendlySyncError(result.message, connectivity.isOnlineNow()))
                     SyncResult.Cancelled -> _state.value = ImportState.Idle

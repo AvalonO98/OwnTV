@@ -1,5 +1,103 @@
 # Changelog
 
+## v4.0.0 — unreleased
+
+Big release — the community‑feedback **UI upgrade** (3 phases; Phase 1's quick wins are the first two
+entries below) folded together with a large batch of new features, performance work and fixes.
+
+### ✨ New features
+
+- **Stream technical info overlay** — in the player, the bottom-bar **info** button toggles a live readout of
+  the current stream: video codec · resolution · fps · bit-depth, HDR type, bitrate, decoder (hardware/software
+  · direct), audio codec · channels · sample rate, buffer & dropped frames, and the (credential-masked) source.
+  Works on both playback engines and updates live.
+- **Volume boost to 150%** — for movies, series and any channel played on the mpv engine, the player volume
+  can go above 100% (Kodi-style amplification, **capped at 150%**) for quiet streams, with mpv's internal soft
+  limiter so it never harshly distorts.
+- **Fixed, roomy layout — no more "sandwiched" Live TV** (Phase 2) — the navigation and category panels no
+  longer expand and collapse as you move the D‑pad, so the interface never jumps around. Live TV is now a
+  stable grid: a slim **icon nav**, a **full‑label category column** (no more 2–3 letter abbreviations), the
+  **channel list**, and a large **preview** — each a fixed size. The same fixed nav + category column apply
+  across **Movies, Series and the Guide**. The **profile avatar** stays pinned top‑left: **click it to switch
+  profiles**, long‑press to change your picture. The result also feels noticeably faster on lower‑end boxes.
+- **Clear watch history** — Settings → Content → **Clear watch history** lets you wipe this profile's
+  recently-watched / "continue watching" rows — **all of it, or just Live TV, Movies or Series** (with a
+  Yes/No confirmation). Playlists, favorites and downloads are untouched.
+- **Favorite a channel straight from Search** — long-press a channel in search results to add or remove it
+  from Favorites; a star shows the current state. No need to open Live TV first.
+- **Detailed channel search results** (Phase 3) — channel results now show **category · channel number** under
+  the name, so near‑identical feeds (e.g. several "ABC" or "Sky Sports") are easy to tell apart; long‑press
+  still toggles the favourite.
+- **Move categories to top / bottom** — in Settings → Customize, each category now has ⤒ / ⤓ buttons to jump
+  it straight to the top or bottom of the list, alongside the existing one-step ↑ / ↓.
+- **Animations setting (On / Off)** — Settings → Appearance → **Animations** turns interface motion on or off.
+  **Off** makes navigation instant — a reduce‑motion / accessibility toggle (the v4.0.0 fixed grid already
+  removed the menu lag that a middle "Reduced" tier used to address).
+- **Channel list in the player** — while watching a channel full-screen, press **Left** (with the controls
+  hidden) to slide out a **channel list over the video** — browse and switch channels without leaving
+  full-screen. The current channel is highlighted; Back or Left again closes it.
+- **Per‑profile startup (default landing)** (Phase 3) — Settings → **Startup** sets, **per profile**, where the
+  app opens: **Home**, the **Last channel** you watched (so a profile that always watches one channel boots
+  straight into it), or **Live TV on Favorites**. Replaces the old global "Resume last channel" toggle —
+  existing "On" carries over to **Last channel**.
+- **Remembers where you were in Live TV** — Live TV reopens on the **category you last had selected** (instead
+  of resetting to All) and lands focus back on the **last channel you were on**.
+- **Guide by category** — the EPG/Guide has a new **Category** filter so you can view just one group at a
+  time instead of every channel at once, with a **search box** in the category list to find a group fast.
+- **Favourites in the Guide** — the Guide's **Sort** button now includes a **Favorites** option, filtering
+  the guide to just your favourited channels.
+- **List view for Movies & Series** — a new **Grid / List** toggle on the Movies and Series screens: switch
+  the poster wall to a compact list to see many more titles at a glance.
+- **A/V sync nudge in the player** — open the **Audio** menu on a movie/episode for an **A/V sync** stepper to
+  nudge the audio earlier/later in 50 ms steps when a badly-encoded file has the sound out of sync. It resets
+  per file, so it never throws off your other movies.
+- **One-tap guide sync after adding a playlist** — after importing a playlist (first-run setup or Settings →
+  Playlists), OwnTV now asks **"Sync the TV guide now?"** if the playlist has a guide feed. **Sync now** shows
+  a **live programme count** (just like the playlist import) and a brief "Done"; **Not now** keeps it manual.
+- **Long-press a channel in Live TV** — long-press any channel in the Live TV list for a quick menu:
+  **Add/Remove Favourite, Rename, Hide, Match EPG**, and **Catch-up** (on channels that support it) — without
+  moving over to the preview pane.
+- **Closed captions (CC) on Live TV** — channels that embed CEA-608/708 closed captions in the video stream
+  (e.g. many US channels like HBO/Showtime/Cinemax) now expose a selectable caption track in the player's
+  **Subtitles** menu, instead of showing only "Off". (#28)
+- **Compatibility mode (per-channel mpv engine)** — if a live channel shows artifacts or won't play right on
+  the fast engine, press the **gear** in the player controls to switch that channel to the mpv engine. It's
+  **remembered per channel**, so it opens cleanly on mpv every time after — every other channel keeps the
+  near-instant start.
+
+### ⚡ Performance
+
+- **The Guide opens instantly** — the guide is now **pre-loaded in the background at startup**, so even the
+  first open is immediate, and re-opening no longer flashes a loading spinner or rebuilds from scratch — it
+  shows your channel list right away and refreshes silently.
+- **Much faster EPG sync** — the guide sync now stores programmes **only for the channels you actually have**
+  instead of the entire feed (public XMLTV feeds often carry 10–20× more channels than your playlist). Far
+  fewer rows to parse and write means a dramatically quicker, lighter sync.
+
+### 🐛 Bug fixes
+
+- **Imports survive a provider that errors on the full Movies/Series list** — some providers (e.g. peoplestv)
+  return a non-standard **HTTP 512** on the giant bulk `get_series` / VOD response, which used to abort the
+  whole import after the channels had loaded. Now a bulk error **automatically falls back to fetching that
+  section one category at a time** (small requests those panels serve fine) — and if even that fails, the
+  import keeps your channels/movies instead of failing outright. Credentials are also no longer shown in
+  import errors.
+- **EPG no longer fails on a single malformed tag** — a guide feed with one bad/odd entry used to abort the
+  whole sync with a cryptic "END_TAG expected …" error. The parser is now tolerant (relaxed mode + resilient
+  text reading) and keeps everything it can, so one bad programme no longer loses the entire guide.
+- **Playback survives the screensaver** — leaving the TV long enough for the screensaver no longer leaves you
+  on a dead stream. A paused **movie/episode** is restored **paused at the exact spot**, and a **live channel**
+  is **re-tuned to the live edge**, when you come back — instead of doing nothing until a manual reload.
+- **Live TV no longer freezes with no recovery** — some live streams stop advancing while the player still
+  thinks it's playing (no buffering, no error), so the auto-reconnect never kicked in and the channel just
+  hung. A new freeze watchdog detects the stalled picture and reconnects automatically.
+- **No sound when opening a channel very fast** — pressing OK on a channel a split-second before its preview
+  loaded could carry the muted-preview state into full-screen, so the channel played silently. Full-screen
+  now always plays with sound.
+- **Audio/video drift on some movies** — a few high-bitrate / high-frame-rate movies could play with the
+  picture slightly behind the sound, because nothing was dropping the late frames on the direct hardware
+  path. The player now drops late frames at the decoder so audio and video stay in sync.
+
 ## v3.2.0 — 2026-06-22
 
 ### ✨ New features

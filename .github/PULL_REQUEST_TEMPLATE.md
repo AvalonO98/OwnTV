@@ -1,19 +1,23 @@
 <!-- Thanks for contributing to OwnTV! Please fill this in so it's easy to review. -->
 
 ## What does this PR do?
-<!-- A short summary of the change. -->
+<!-- A clear summary of the change and how it works. -->
 
 
-## Why?
-<!-- The problem it solves, or the feature it adds. Link any related issue, e.g. "Closes #12". -->
+## Which issue / improvement does it address?
+<!-- Link the issue it fixes ("Closes #12"), or describe the upgrade it makes and why it's worth it. -->
 
 
 ## How was it tested?
-<!-- e.g. ran on an Android TV emulator (API XX), played a movie, checked EPG, etc. -->
-
+<!-- IMPORTANT: OwnTV is a TV app — please test on a REAL Android TV / Fire TV device, not the emulator
+     only. The emulator misses a lot: HDR, hardware decoding, surround/passthrough, and real remote
+     (D-pad) behaviour. -->
+- **Device(s) tested on:** <!-- e.g. Fire TV Stick 4K Max, NVIDIA Shield, TCL Google TV -->
+- **What you exercised:** <!-- e.g. played a 4K HDR movie, switched audio track on live, EPG catch-up, D-pad nav -->
 
 ## Checklist
 - [ ] Builds locally (`./gradlew assembleDebug`) and CI is green
-- [ ] Tested on an Android TV emulator or device (D-pad navigation works)
+- [ ] **Tested on a real Android TV / Fire TV device** (not emulator only) — D-pad/remote navigation works
+- [ ] No user data is wiped (Room migrations stay additive)
 - [ ] Keeps OwnTV player-only (no bundled channels/content)
 - [ ] Commit messages are clear (they become the release notes)

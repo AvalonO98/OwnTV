@@ -93,6 +93,9 @@ fun SettingsScreen(
     var showUpdate by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     var showCatchupTime by remember { mutableStateOf(false) }
+    var showClearHistory by remember { mutableStateOf(false) }
+    var showAnimations by remember { mutableStateOf(false) }
+    var showStartup by remember { mutableStateOf(false) }
 
     // Dialog-close focus return: closing a dialog/picker refocuses the row that opened it (focus
     // would otherwise fall spatially back to the sidebar).
@@ -103,12 +106,15 @@ fun SettingsScreen(
     val updateRowFocus = remember { FocusRequester() }
     val aboutRowFocus = remember { FocusRequester() }
     val catchupRowFocus = remember { FocusRequester() }
+    val clearHistoryRowFocus = remember { FocusRequester() }
+    val animationsRowFocus = remember { FocusRequester() }
+    val startupRowFocus = remember { FocusRequester() }
     // NOTE: this restore request crosses INTO the root focus group from outside (the dialog), so
     // the group's onEnter intercepts it — onEnter must consult dialogReturn first (it does, below)
     // or it would hijack the restore to its own default target. dialogReturn is cleared by onEnter.
     var dialogReturn by remember { mutableStateOf<FocusRequester?>(null) }
-    LaunchedEffect(showZoom, showTheme, showAccent, showFolderPicker, showUpdate, showAbout, showCatchupTime) {
-        if (!showZoom && !showTheme && !showAccent && !showFolderPicker && !showUpdate && !showAbout && !showCatchupTime) {
+    LaunchedEffect(showZoom, showTheme, showAccent, showFolderPicker, showUpdate, showAbout, showCatchupTime, showClearHistory, showAnimations, showStartup) {
+        if (!showZoom && !showTheme && !showAccent && !showFolderPicker && !showUpdate && !showAbout && !showCatchupTime && !showClearHistory && !showAnimations && !showStartup) {
             dialogReturn?.let { row ->
                 kotlinx.coroutines.delay(80)
                 runCatching { row.requestFocus() }
@@ -123,11 +129,14 @@ fun SettingsScreen(
     val surroundSound by settingsVm.surroundSound.collectAsStateWithLifecycle()
     val autoPlayNext by settingsVm.autoPlayNext.collectAsStateWithLifecycle()
     val updateCheckOnStart by settingsVm.updateCheckOnStart.collectAsStateWithLifecycle()
+    val resumeLastChannel by settingsVm.resumeLastChannel.collectAsStateWithLifecycle()
+    val startupMode by settingsVm.startupMode.collectAsStateWithLifecycle()
     val catchupTz by settingsVm.catchupTimezone.collectAsStateWithLifecycle()
     val catchupOffset by settingsVm.catchupOffsetMinutes.collectAsStateWithLifecycle()
     val catchupChannels by settingsVm.catchupChannelCount.collectAsStateWithLifecycle()
     val accent by settingsVm.accent.collectAsStateWithLifecycle()
     val customAccent by settingsVm.customAccent.collectAsStateWithLifecycle()
+    val animationLevel by settingsVm.animationLevel.collectAsStateWithLifecycle()
 
     // Restore focus to the row a sub-screen was opened from when the user navigates back.
     var lastTab by remember { mutableStateOf<SettingsTab?>(null) }
@@ -243,6 +252,12 @@ fun SettingsScreen(
             onClick = { open(SettingsTab.BACKUP) }, showChevron = true,
             modifier = Modifier.focusRequester(rowFocus.getValue(SettingsTab.BACKUP)),
         )
+        SettingsRow(
+            tone = TileTone.SECONDARY, icon = OwnTVIcon.HISTORY,
+            title = "Clear watch history", desc = "Remove this profile's recently-watched & continue rows",
+            onClick = { dialogReturn = clearHistoryRowFocus; showClearHistory = true }, showChevron = true,
+            modifier = Modifier.focusRequester(clearHistoryRowFocus),
+        )
         SectionDivider()
         GroupLabel("Appearance")
         SettingsRow(
@@ -267,6 +282,13 @@ fun SettingsScreen(
             onClick = { dialogReturn = zoomRowFocus; showZoom = true }, showChevron = true,
             modifier = Modifier.focusRequester(zoomRowFocus),
         )
+        SettingsRow(
+            tone = TileTone.SECONDARY, icon = OwnTVIcon.THEME,
+            title = "Animations", desc = "Turn interface motion on or off — Off feels snappier on lower-end TV boxes",
+            chip = animationLevel.label, chipTone = TileTone.SECONDARY,
+            onClick = { dialogReturn = animationsRowFocus; showAnimations = true }, showChevron = true,
+            modifier = Modifier.focusRequester(animationsRowFocus),
+        )
 
         SectionDivider()
         GroupLabel("Playback")
@@ -284,6 +306,14 @@ fun SettingsScreen(
             chip = if (surroundSound) "On" else "Off",
             chipTone = if (surroundSound) TileTone.PRIMARY else TileTone.SECONDARY,
             onClick = { settingsVm.setSurroundSound(!surroundSound) },
+        )
+        SettingsRow(
+            tone = TileTone.SECONDARY, icon = OwnTVIcon.LIVE_TV,
+            title = "Startup",
+            desc = "Where this profile opens: Home, the last live channel you watched, or Live TV on Favorites.",
+            chip = startupMode.label, chipTone = TileTone.SECONDARY,
+            onClick = { dialogReturn = startupRowFocus; showStartup = true }, showChevron = true,
+            modifier = Modifier.focusRequester(startupRowFocus),
         )
         SettingsRow(
             tone = TileTone.SECONDARY, icon = OwnTVIcon.SKIP_NEXT,
@@ -353,6 +383,12 @@ fun SettingsScreen(
     if (showAbout) {
         AboutDialog(onDismiss = { showAbout = false })
     }
+    if (showClearHistory) {
+        ClearHistoryDialog(
+            onClear = { type -> settingsVm.clearWatchHistory(type); showClearHistory = false },
+            onDismiss = { showClearHistory = false },
+        )
+    }
     if (showTheme) {
         tv.own.owntv.features.settings.PickerDialog(
             title = "Theme",
@@ -360,6 +396,24 @@ fun SettingsScreen(
             selected = themeMode.name,
             onSelect = { settingsVm.setThemeMode(ThemeMode.valueOf(it)); showTheme = false },
             onDismiss = { showTheme = false },
+        )
+    }
+    if (showAnimations) {
+        tv.own.owntv.features.settings.PickerDialog(
+            title = "Animations",
+            options = tv.own.owntv.ui.theme.AnimationLevel.entries.map { it.name to it.label },
+            selected = animationLevel.name,
+            onSelect = { settingsVm.setAnimationLevel(tv.own.owntv.ui.theme.AnimationLevel.valueOf(it)); showAnimations = false },
+            onDismiss = { showAnimations = false },
+        )
+    }
+    if (showStartup) {
+        tv.own.owntv.features.settings.PickerDialog(
+            title = "Startup",
+            options = tv.own.owntv.features.settings.data.StartupMode.entries.map { it.name to it.label },
+            selected = startupMode.name,
+            onSelect = { settingsVm.setStartupMode(tv.own.owntv.features.settings.data.StartupMode.valueOf(it)); showStartup = false },
+            onDismiss = { showStartup = false },
         )
     }
     if (showAccent) {
@@ -587,6 +641,61 @@ private fun AboutDialog(onDismiss: () -> Unit) {
             )
             Spacer(Modifier.height(20.dp))
             OwnTVButton("Close", onClick = onDismiss, modifier = Modifier.focusRequester(focus))
+        }
+    }
+}
+
+/**
+ * Pick what watch history to clear: everything, or just Live TV / Movies / Series. Over a dimmed scrim;
+ * Cancel is focused first so a stray OK doesn't wipe anything. [onClear] gets null for "all".
+ */
+@Composable
+private fun ClearHistoryDialog(
+    onClear: (tv.own.owntv.core.model.MediaType?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = OwnTVTheme.colors
+    // null = still choosing a scope; non-null = confirming that scope (type + label; type null = everything).
+    var pending by remember { mutableStateOf<Pair<tv.own.owntv.core.model.MediaType?, String>?>(null) }
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(pending) { runCatching { firstFocus.requestFocus() } }
+    BackHandler { if (pending != null) pending = null else onDismiss() }
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.75f)).focusGroup(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.width(460.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            val p = pending
+            if (p == null) {
+                Text("Clear watch history", style = MaterialTheme.typography.titleLarge, color = colors.onSurface, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Choose what to remove for this profile. Playlists, favorites and downloads are not affected.",
+                    style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant, textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(20.dp))
+                OwnTVButton("Cancel", onClick = onDismiss, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth().focusRequester(firstFocus))
+                Spacer(Modifier.height(10.dp))
+                OwnTVButton("Live TV", onClick = { pending = tv.own.owntv.core.model.MediaType.LIVE to "Live TV" }, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OwnTVButton("Movies", onClick = { pending = tv.own.owntv.core.model.MediaType.MOVIE to "Movies" }, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OwnTVButton("Series", onClick = { pending = tv.own.owntv.core.model.MediaType.SERIES to "Series" }, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OwnTVButton("All history", onClick = { pending = (null as tv.own.owntv.core.model.MediaType?) to "all" }, modifier = Modifier.fillMaxWidth())
+            } else {
+                Text("Clear ${p.second} history?", style = MaterialTheme.typography.titleLarge, color = colors.onSurface, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(8.dp))
+                Text("This can't be undone.", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(24.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OwnTVButton("No", onClick = { pending = null }, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.focusRequester(firstFocus))
+                    OwnTVButton("Yes, clear", onClick = { onClear(p.first) })
+                }
+            }
         }
     }
 }

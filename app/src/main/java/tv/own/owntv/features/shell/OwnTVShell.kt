@@ -27,6 +27,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.first
 import org.koin.compose.koinInject
 import tv.own.owntv.core.update.UpdateManager
 import tv.own.owntv.features.update.UpdateDialog
@@ -108,11 +109,48 @@ fun OwnTVShell(
     val epgCanZap by epgVm.canZap.collectAsStateWithLifecycle()
     // Full-screen is running on the ExoPlayer engine (a promoted Live preview) rather than mpv.
     val liveOnExo by liveVm.liveOnExo.collectAsStateWithLifecycle()
+    val forceMpvUrls by liveVm.forceMpvUrls.collectAsStateWithLifecycle()
     // Live rewind / timeshift: whether the live channel supports catch-up, and how far behind live we are.
     val canRewindLive by liveVm.canRewindLive.collectAsStateWithLifecycle()
     val timeshiftOffset by liveVm.timeshiftOffsetSec.collectAsStateWithLifecycle()
     // Which section armed the current fullscreen stream — picks whose channel list CH+/CH- step through.
     var zapSource by remember { mutableStateOf<MainSection?>(null) }
+    // In-player channel-list overlay (Left while controls hidden, live only).
+    var showChannelList by remember { mutableStateOf(false) }
+    val zapChannels by liveVm.zapChannels.collectAsStateWithLifecycle()
+    val previewChannel by liveVm.previewChannel.collectAsStateWithLifecycle()
+
+    // "Resume last channel on startup" (opt-in, default off): once when the shell first appears, if enabled
+    // and nothing is playing, jump straight back into the last live channel watched. Reads the setting once
+    // (via first()) so toggling it later in Settings never yanks the user into a channel.
+    val resumeSettings = koinInject<tv.own.owntv.features.settings.data.SettingsRepository>()
+    LaunchedEffect(Unit) {
+        if (playerMode != PlayerMode.NONE) return@LaunchedEffect
+        val pid = resumeSettings.activeProfileId.first()
+        when (resumeSettings.startupMode(pid).first()) {
+            tv.own.owntv.features.settings.data.StartupMode.LAST_CHANNEL -> {
+                val ch = liveVm.lastWatchedLiveChannel()
+                if (ch != null && playerMode == PlayerMode.NONE) {
+                    zapSource = MainSection.LIVE_TV
+                    liveVm.watchFullscreen(ch, listOf(ch))
+                    playerMode = PlayerMode.FULLSCREEN
+                }
+            }
+            // Open straight to Live TV on the Favorites folder.
+            tv.own.owntv.features.settings.data.StartupMode.FAVORITES -> {
+                onSelectSection(MainSection.LIVE_TV)
+                liveVm.select(tv.own.owntv.features.live.LiveKey.Favorites)
+            }
+            tv.own.owntv.features.settings.data.StartupMode.HOME -> Unit
+        }
+    }
+
+    // Eager-prefetch the Guide once at startup so even the FIRST open is instant (no spinner). The
+    // EpgViewModel is shared, so by the time the user navigates to the Guide its list is already populated;
+    // opening it then just silently refreshes. Skipped if the user is already in the Guide (it loads itself).
+    LaunchedEffect(Unit) {
+        if (selectedSection != MainSection.EPG) epgVm.load()
+    }
 
     // Opening content from a browse screen goes fullscreen — UNLESS the player is already docked as a
     // mini-player, in which case it stays docked and just swaps to the newly-selected stream (the VM
@@ -128,6 +166,8 @@ fun OwnTVShell(
     val expandPlayer = { restoreFocus = false; playerMode = PlayerMode.FULLSCREEN }
     val exitPlayer = {
         playerMode = PlayerMode.NONE
+        showChannelList = false
+        liveVm.onFullscreenExited() // no longer full-screen on ExoPlayer → let the preview re-take the engine
         player.stop()
         restoreFocus = true
         runCatching { sidebarFocus.requestFocus() } // fallback if the screen has nothing to restore
@@ -325,13 +365,25 @@ fun OwnTVShell(
                     onPip = dockPlayer, // PiP/dock works for live on either engine now
                     onChannelUp = zap?.let { z -> { z(-1) } },
                     onChannelDown = zap?.let { z -> { z(1) } },
+                    onOpenChannelList = if (isLiveChannel && liveCanZap) { { showChannelList = true } } else null,
                     onRewindLive = if (isLiveChannel && canRewindLive) liveVm::rewindLive else null,
                     onForwardLive = if (isLiveChannel) liveVm::forwardLive else null,
                     onGoToLive = if (isLiveChannel) liveVm::goToLive else null,
                     onScrubLive = if (isLiveChannel && canRewindLive) liveVm::scrubLive else null,
                     timeshiftOffsetSec = if (isLiveChannel) timeshiftOffset else null,
+                    compatMode = if (isLiveChannel) previewChannel?.streamUrl in forceMpvUrls else null,
+                    onToggleCompatMode = if (isLiveChannel) liveVm::toggleForceMpv else null,
                     modifier = Modifier.fillMaxSize(),
                 )
+                if (showChannelList && isLiveChannel && zapChannels.size > 1) {
+                    tv.own.owntv.features.shell.components.ChannelListOverlay(
+                        channels = zapChannels,
+                        currentId = previewChannel?.id,
+                        onSelect = { liveVm.ensurePlaying(it); showChannelList = false },
+                        onDismiss = { showChannelList = false },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             } else {
                 MiniPlayer(player = if (liveOnExo) liveVm.previewEngine else mpvEngine, onExpand = expandPlayer, onClose = exitPlayer, modifier = Modifier.fillMaxSize())
             }

@@ -170,6 +170,8 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     isAnchor = row.key == rangeAnchorKey,
                     onMoveUp = { vm.move(row, up = true) },
                     onMoveDown = { vm.move(row, up = false) },
+                    onMoveTop = { vm.moveToEdge(row, top = true) },
+                    onMoveBottom = { vm.moveToEdge(row, top = false) },
                     onRename = { renaming = row },
                     onToggleHidden = { vm.setCategoryHidden(row, !row.hidden) },
                     onHideLongPress = { vm.beginRange(row) },
@@ -267,6 +269,8 @@ private fun CategoryRow(
     isAnchor: Boolean,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
+    onMoveTop: () -> Unit,
+    onMoveBottom: () -> Unit,
     onRename: () -> Unit,
     onToggleHidden: () -> Unit,
     onHideLongPress: () -> Unit,
@@ -307,9 +311,13 @@ private fun CategoryRow(
             }
         }
         Spacer(Modifier.width(10.dp))
+        OwnTVButton("⤒", onClick = onMoveTop, style = OwnTVButtonStyle.SECONDARY)
+        Spacer(Modifier.width(6.dp))
         OwnTVButton("↑", onClick = onMoveUp, style = OwnTVButtonStyle.SECONDARY)
         Spacer(Modifier.width(6.dp))
         OwnTVButton("↓", onClick = onMoveDown, style = OwnTVButtonStyle.SECONDARY)
+        Spacer(Modifier.width(6.dp))
+        OwnTVButton("⤓", onClick = onMoveBottom, style = OwnTVButtonStyle.SECONDARY)
         Spacer(Modifier.width(6.dp))
         OwnTVButton("Rename", onClick = onRename, style = OwnTVButtonStyle.SECONDARY)
         Spacer(Modifier.width(6.dp))

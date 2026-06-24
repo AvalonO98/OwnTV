@@ -71,6 +71,8 @@ fun PlayerHud(
     onPip: (() -> Unit)? = null,
     onChannelUp: (() -> Unit)? = null,
     onChannelDown: (() -> Unit)? = null,
+    // Live: open the channel-list overlay (Left while the controls are hidden). Null = not a live channel.
+    onOpenChannelList: (() -> Unit)? = null,
     // Live rewind / timeshift (catch-up channels). onRewindLive non-null = this live channel can rewind;
     // timeshiftOffsetSec non-null = currently watching that many seconds behind the live edge.
     onRewindLive: (() -> Unit)? = null,
@@ -78,6 +80,10 @@ fun PlayerHud(
     onGoToLive: (() -> Unit)? = null,
     onScrubLive: ((Int) -> Unit)? = null, // timeline scrub: +sec = back, −sec = toward live
     timeshiftOffsetSec: Int? = null,
+    // Live "compatibility mode": pin this channel to the mpv engine (fixes UHD artifacts / undecodable
+    // streams ExoPlayer can't handle). null = not a live channel; true = currently pinned to mpv.
+    compatMode: Boolean? = null,
+    onToggleCompatMode: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isPlaying by player.isPlaying.collectAsStateWithLifecycle()
@@ -90,6 +96,7 @@ fun PlayerHud(
     val volume by player.volume.collectAsStateWithLifecycle()
     val videoRes by player.videoRes.collectAsStateWithLifecycle()
     val audioCount by player.audioCount.collectAsStateWithLifecycle()
+    val audioDelayMs by player.audioDelayMs.collectAsStateWithLifecycle()
     val subCount by player.subCount.collectAsStateWithLifecycle()
     val zoomMode by player.zoomMode.collectAsStateWithLifecycle()
     val speed by player.speed.collectAsStateWithLifecycle()
@@ -101,6 +108,7 @@ fun PlayerHud(
     val catchFocus = remember { FocusRequester() }
 
     var controlsVisible by remember { mutableStateOf(true) }
+    var showInfo by remember { mutableStateOf(false) } // stream technical-info overlay
     var wakeTick by remember { mutableIntStateOf(0) }
     val forceShow = error != null || dialog != HudDialog.NONE
     // First Back hides the controls (instead of leaving the channel); with the controls already hidden
@@ -135,6 +143,8 @@ fun PlayerHud(
                 canZap && (e.key == Key.ChannelDown || e.key == Key.MediaNext) -> { zap(1); true }
                 canZap && !controlsVisible && e.key == Key.DirectionUp -> { zap(-1); true }
                 canZap && !controlsVisible && e.key == Key.DirectionDown -> { zap(1); true }
+                // Left while the HUD is hidden opens the channel-list overlay (live only).
+                onOpenChannelList != null && !controlsVisible && e.key == Key.DirectionLeft -> { onOpenChannelList(); true }
                 controlsVisible -> { wakeTick++; false }
                 else -> false
             }
@@ -145,6 +155,12 @@ fun PlayerHud(
                 Modifier.fillMaxSize().focusRequester(catchFocus).focusable()
                     .onKeyEvent { e -> if (e.type == KeyEventType.KeyDown && e.key != Key.Back) { controlsVisible = true; true } else false },
             )
+        }
+
+        // Stream technical info — drawn over everything (and kept up even when the controls auto-hide), so
+        // you can read live bitrate/buffer while watching. Toggled from the bottom bar's info button.
+        if (showInfo) {
+            StreamInfoOverlay(player, modifier = Modifier.align(Alignment.TopEnd).padding(top = 84.dp, end = 20.dp))
         }
 
         // Channel flash card (zapping with the HUD hidden) — shown independently of the full controls.
@@ -172,6 +188,8 @@ fun PlayerHud(
                     volume = volume, audioCount = audioCount, subCount = subCount, zoomMode = zoomMode,
                     speedLabel = formatSpeed(speed),
                     onScrubLive = onScrubLive, timeshiftOffsetSec = timeshiftOffsetSec,
+                    compatMode = compatMode, onToggleCompatMode = onToggleCompatMode,
+                    onInfo = { showInfo = !showInfo }, infoOn = showInfo,
                     onOpenDialog = { dialog = it }, onPip = onPip, onBack = onBack,
                     modifier = Modifier.align(Alignment.BottomStart),
                 )
@@ -208,7 +226,14 @@ fun PlayerHud(
     }
 
     when (dialog) {
-        HudDialog.AUDIO -> TrackDialog("Audio Track", player.audioTracks(), onSelect = { player.selectAudio(it.mpvId); dialog = HudDialog.NONE }, onOff = null, onDismiss = { dialog = HudDialog.NONE })
+        HudDialog.AUDIO -> TrackDialog(
+            "Audio Track", player.audioTracks(),
+            onSelect = { player.selectAudio(it.mpvId); dialog = HudDialog.NONE }, onOff = null,
+            onDismiss = { dialog = HudDialog.NONE },
+            // A/V-sync nudge only for VOD (mpv) — live A/V is the provider's; ExoPlayer has no audio-delay.
+            audioDelayMs = if (!isLive) audioDelayMs else null,
+            onAdjustAudioDelay = if (!isLive) ({ d -> player.adjustAudioDelay(d) }) else null,
+        )
         HudDialog.SUBS -> TrackDialog("Subtitles", player.textTracks(), onSelect = { player.selectSubtitle(it.mpvId); dialog = HudDialog.NONE }, onOff = { player.disableSubtitles(); dialog = HudDialog.NONE }, onDismiss = { dialog = HudDialog.NONE })
         HudDialog.SPEED -> SpeedDialog(current = speed, onSelect = { player.setSpeed(it); dialog = HudDialog.NONE }, onDismiss = { dialog = HudDialog.NONE })
         HudDialog.ZOOM -> ZoomDialog(current = zoomMode, onSelect = { player.setZoomMode(it); dialog = HudDialog.NONE }, onDismiss = { dialog = HudDialog.NONE })
@@ -337,6 +362,8 @@ private fun BottomBar(
     player: PlaybackEngine, isLive: Boolean, position: Long, duration: Long,
     volume: Int, audioCount: Int, subCount: Int, zoomMode: ZoomMode, speedLabel: String,
     onScrubLive: ((Int) -> Unit)?, timeshiftOffsetSec: Int?,
+    compatMode: Boolean?, onToggleCompatMode: (() -> Unit)?,
+    onInfo: (() -> Unit)? = null, infoOn: Boolean = false,
     onOpenDialog: (HudDialog) -> Unit, onPip: (() -> Unit)?, onBack: () -> Unit, modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 20.dp)) {
@@ -363,8 +390,15 @@ private fun BottomBar(
                 SpeedButton(label = speedLabel, active = speedLabel != "1.0x") { onOpenDialog(HudDialog.SPEED) }
                 CtrlButton(OwnTVIcon.SUBTITLE, badge = subCount.takeIf { it > 0 }) { onOpenDialog(HudDialog.SUBS) }
                 CtrlButton(OwnTVIcon.AUDIO, badge = audioCount.takeIf { it > 1 }) { onOpenDialog(HudDialog.AUDIO) }
+                // Stream technical info (codec/res/HDR/bitrate/decoder/audio/buffer) — toggles the overlay.
+                if (onInfo != null) CtrlButton(OwnTVIcon.VIDEO, active = infoOn) { onInfo() }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Live "compatibility mode": pin this channel to mpv (fixes UHD artifacts / streams ExoPlayer
+                // can't decode). Highlighted when active; persists per channel.
+                if (onToggleCompatMode != null) {
+                    CtrlButton(OwnTVIcon.SETTINGS, active = compatMode == true) { onToggleCompatMode() }
+                }
                 // Aspect/zoom works in every mode now — direct mode resizes the surface view itself
                 // (see MpvVideoSurface), GL mode scales internally.
                 CtrlButton(OwnTVIcon.ASPECT, active = zoomMode != ZoomMode.FIT) { onOpenDialog(HudDialog.ZOOM) }
@@ -529,7 +563,15 @@ private fun LiveTimelineBar(offsetSec: Int, onScrub: (Int) -> Unit) {
 // ---------------- Dialogs ----------------
 
 @Composable
-private fun TrackDialog(title: String, tracks: List<TrackOption>, onSelect: (TrackOption) -> Unit, onOff: (() -> Unit)?, onDismiss: () -> Unit) {
+private fun TrackDialog(
+    title: String,
+    tracks: List<TrackOption>,
+    onSelect: (TrackOption) -> Unit,
+    onOff: (() -> Unit)?,
+    onDismiss: () -> Unit,
+    audioDelayMs: Int? = null,                 // non-null on the Audio dialog (VOD) → show the A/V-sync nudge
+    onAdjustAudioDelay: ((Int) -> Unit)? = null,
+) {
     val colors = OwnTVTheme.colors
     val focus = remember { FocusRequester() }
     BackHandler { onDismiss() }
@@ -562,7 +604,33 @@ private fun TrackDialog(title: String, tracks: List<TrackOption>, onSelect: (Tra
                 onClick = { onSelect(track) },
             )
         }
+        // A/V-sync nudge (audio dialog, VOD only) — fixes a badly-muxed file where audio leads/lags the video.
+        if (onAdjustAudioDelay != null) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("A/V sync", style = MaterialTheme.typography.titleSmall, color = colors.onSurface, modifier = Modifier.weight(1f))
+                    StepButton("–", enabled = (audioDelayMs ?: 0) > -5_000) { onAdjustAudioDelay(-50) }
+                    Text(
+                        formatDelay(audioDelayMs ?: 0),
+                        style = MaterialTheme.typography.bodyMedium, color = colors.primary,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.width(78.dp),
+                    )
+                    StepButton("+", enabled = (audioDelayMs ?: 0) < 5_000) { onAdjustAudioDelay(50) }
+                }
+            }
+        }
     }
+}
+
+private fun formatDelay(ms: Int): String = when {
+    ms == 0 -> "0 ms"
+    ms > 0 -> "+$ms ms"
+    else -> "$ms ms"
 }
 
 @Composable

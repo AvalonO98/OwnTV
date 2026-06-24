@@ -68,18 +68,9 @@ fun Sidebar(
     val colors = OwnTVTheme.colors
     var hasFocus by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    // Expand only after focus settles (~120ms), and collapse instantly. A transient focus blip — e.g.
-    // a Settings submenu unmounting and routing focus back through here for a moment before the
-    // settings row reclaims it — would otherwise flash the sidebar open then closed.
-    var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(hasFocus) {
-        if (hasFocus) { kotlinx.coroutines.delay(120); expanded = true } else expanded = false
-    }
-    val width by animateDpAsState(
-        targetValue = if (expanded) Dimens.SidebarWidthExpanded else Dimens.SidebarWidthCollapsed,
-        label = "sidebarWidth",
-    )
-    val hPad by animateDpAsState(if (expanded) 20.dp else 12.dp, label = "sidebarPad")
+    // Phase 2 — the nav is a FIXED icon rail: it never expands or collapses, so the layout never jumps on
+    // the D-pad and the profile avatar stays pinned top-left. Full section labels live in the content panes.
+    val expanded = false
 
     Column(
         modifier = modifier
@@ -95,9 +86,9 @@ fun Sidebar(
                 if (entered) scope.launch { runCatching { selectedItemFocusRequester.requestFocus() } }
             }
             .focusGroup()
-            .width(width)
+            .width(Dimens.SidebarWidthCollapsed)
             .background(colors.surfaceContainer)
-            .padding(horizontal = hPad, vertical = 24.dp),
+            .padding(horizontal = 12.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ProfileCard(
@@ -171,8 +162,9 @@ private fun ProfileCard(
     val colors = OwnTVTheme.colors
 
     if (!expanded) {
-        // Collapsed: just the (tappable) avatar.
-        AvatarButton(avatarId = avatarId, sizeDp = 52, onPickAvatar = onPickAvatar)
+        // Fixed nav: just the avatar — click opens the profile switcher ("who's watching"), long-press
+        // changes the avatar picture. Pinned top-left, always in the same spot.
+        AvatarButton(avatarId = avatarId, sizeDp = 56, onClick = onSwitchProfile, onLongClick = onPickAvatar)
         return
     }
 
@@ -192,7 +184,7 @@ private fun ProfileCard(
             modifier = Modifier.fillMaxWidth().padding(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AvatarButton(avatarId = avatarId, sizeDp = 64, onPickAvatar = onPickAvatar)
+            AvatarButton(avatarId = avatarId, sizeDp = 64, onClick = onPickAvatar)
             Spacer(Modifier.height(10.dp))
             Text(
                 profileName.ifBlank { "OwnTV User" },
@@ -233,9 +225,10 @@ private fun ProfileCard(
 }
 
 @Composable
-private fun AvatarButton(avatarId: Int, sizeDp: Int, onPickAvatar: () -> Unit) {
+private fun AvatarButton(avatarId: Int, sizeDp: Int, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     FocusableSurface(
-        onClick = onPickAvatar,
+        onClick = onClick,
+        onLongClick = onLongClick,
         modifier = Modifier.size(sizeDp.dp),
         shape = CircleShape,
         focusedScale = 1.08f,

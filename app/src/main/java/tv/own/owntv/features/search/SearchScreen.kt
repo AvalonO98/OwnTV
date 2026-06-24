@@ -56,6 +56,7 @@ fun SearchScreen(
     val vm: SearchViewModel = koinViewModel()
     val query by vm.query.collectAsStateWithLifecycle()
     val results by vm.results.collectAsStateWithLifecycle()
+    val favoriteIds by vm.favoriteChannelIds.collectAsStateWithLifecycle()
     val colors = OwnTVTheme.colors
 
     val searchFocus = remember { FocusRequester() }
@@ -87,9 +88,15 @@ fun SearchScreen(
             ) {
                 if (results.channels.isNotEmpty()) {
                     item {
-                        ResultSection("Channels") {
-                            items(results.channels, key = { "c${it.id}" }) { ch ->
-                                ChannelChip(ch) { vm.playChannel(ch); onFullscreen() }
+                        ResultSection("Channels", hint = "Long-press to favorite") {
+                            items(results.channels, key = { "c${it.channel.id}" }) { row ->
+                                ChannelChip(
+                                    channel = row.channel,
+                                    categoryName = row.categoryName,
+                                    isFavorite = row.channel.id in favoriteIds,
+                                    onClick = { vm.playChannel(row.channel); onFullscreen() },
+                                    onToggleFavorite = { vm.toggleFavoriteChannel(row.channel) },
+                                )
                             }
                         }
                     }
@@ -132,18 +139,33 @@ fun SearchScreen(
 }
 
 @Composable
-private fun ResultSection(title: String, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+private fun ResultSection(title: String, hint: String? = null, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title.uppercase(), style = MaterialTheme.typography.titleSmall, color = OwnTVTheme.colors.primary, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title.uppercase(), style = MaterialTheme.typography.titleSmall, color = OwnTVTheme.colors.primary, fontWeight = FontWeight.Bold)
+            if (hint != null) {
+                Text(hint, style = MaterialTheme.typography.labelSmall, color = OwnTVTheme.colors.onSurfaceVariant)
+            }
+        }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
 }
 
 @Composable
-private fun ChannelChip(channel: ChannelEntity, onClick: () -> Unit) {
+private fun ChannelChip(
+    channel: ChannelEntity,
+    categoryName: String?,
+    isFavorite: Boolean,
+    onClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+) {
+    // "category · #number" so near-identical feeds (e.g. several "ABC") are distinguishable.
+    val detail = listOfNotNull(categoryName?.takeIf { it.isNotBlank() }, channel.number?.let { "#$it" })
+        .joinToString(" · ").takeIf { it.isNotBlank() }
     val colors = OwnTVTheme.colors
     FocusableSurface(
         onClick = onClick,
+        onLongClick = onToggleFavorite,
         modifier = Modifier.width(220.dp),
         shape = RoundedCornerShape(12.dp),
         contentAlignment = Alignment.CenterStart,
@@ -163,12 +185,25 @@ private fun ChannelChip(channel: ChannelEntity, onClick: () -> Unit) {
                     OwnTVIcon(OwnTVIcon.LIVE_TV, tint = colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
                 }
             }
-            Text(
-                channel.name,
-                style = MaterialTheme.typography.titleSmall,
-                color = if (focused) colors.primary else colors.onSurface,
-                maxLines = 2,
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    channel.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (focused) colors.primary else colors.onSurface,
+                    maxLines = 2,
+                )
+                if (detail != null) {
+                    Text(
+                        detail,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+            if (isFavorite) {
+                OwnTVIcon(OwnTVIcon.STAR, tint = colors.primary, modifier = Modifier.size(18.dp))
+            }
         }
     }
 }

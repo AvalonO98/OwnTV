@@ -74,6 +74,9 @@ class ShellViewModel(
     val uiZoomPercent: StateFlow<Int> = settings.uiZoomPercent
         .stateIn(viewModelScope, SharingStarted.Eagerly, UiZoom.DEFAULT)
 
+    val animationLevel: StateFlow<tv.own.owntv.ui.theme.AnimationLevel> = settings.animationLevel
+        .stateIn(viewModelScope, SharingStarted.Eagerly, tv.own.owntv.ui.theme.AnimationLevel.FULL)
+
     val accent: StateFlow<AccentColor> = settings.accent
         .stateIn(viewModelScope, SharingStarted.Eagerly, AccentColor.TEAL)
 

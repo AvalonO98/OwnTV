@@ -38,9 +38,19 @@ class MainActivity : ComponentActivity() {
         // cache + decoder buffers — holding them while invisible got the process LMK-killed on real TVs.
         if (!isChangingConfigurations) {
             player.onAppBackgrounded()
-            previewEngine.stop() // live runs on ExoPlayer — must stop it too, or its audio keeps playing
+            // Live runs on ExoPlayer — remember the channel and free the stream (its audio must stop too).
+            previewEngine.onAppBackgrounded()
         }
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Paired with onStop: bring back what was freed while backgrounded (notably the TV screensaver, which
+        // kicks in during a long pause) — a VOD restored paused at its position, and a live channel re-tuned
+        // to the live edge — so Play resumes instead of sitting on a dead/empty stream. No-op on fresh launch.
+        player.onAppForegrounded()
+        previewEngine.onAppForegrounded()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +69,7 @@ class MainActivity : ComponentActivity() {
             val accent by viewModel.accent.collectAsStateWithLifecycle()
             val customAccent by viewModel.customAccent.collectAsStateWithLifecycle()
             val uiZoomPercent by viewModel.uiZoomPercent.collectAsStateWithLifecycle()
+            val animationLevel by viewModel.animationLevel.collectAsStateWithLifecycle()
             val avatarId by viewModel.avatarId.collectAsStateWithLifecycle()
             val profileName by viewModel.profileName.collectAsStateWithLifecycle()
             val sourceSummary by viewModel.sourceSummary.collectAsStateWithLifecycle()
@@ -81,7 +92,7 @@ class MainActivity : ComponentActivity() {
                 if ((activeProfileId ?: -1L) >= 0L) viewModel.refreshOnStartIfEnabled()
             }
 
-            OwnTVTheme(themeMode = themeMode, accent = accent, systemInDarkTheme = isSystemInDarkTheme(), customAccent = customAccent) {
+            OwnTVTheme(themeMode = themeMode, accent = accent, systemInDarkTheme = isSystemInDarkTheme(), customAccent = customAccent, animationLevel = animationLevel) {
                 val base = LocalDensity.current
                 CompositionLocalProvider(
                     LocalDensity provides Density(base.density * UiZoom.factor(uiZoomPercent), base.fontScale),
@@ -126,7 +137,7 @@ class MainActivity : ComponentActivity() {
                                 onExitApp = { finish() },
                                 onSwitchProfile = {
                                     // Stop playback and return to the "Who's watching?" gate — no app restart.
-                                    player.onAppBackgrounded(); previewEngine.stop(); gatePassed = false
+                                    player.onAppBackgrounded(); player.discardBackgroundRestore(); previewEngine.stop(); previewEngine.discardBackgroundRestore(); gatePassed = false
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )

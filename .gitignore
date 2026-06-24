@@ -18,3 +18,5 @@ local.properties
 *.jks
 keystore.properties
 signing.properties
+extras/stalker-portal-plan.md
+extras/cloud-backup-plan.md

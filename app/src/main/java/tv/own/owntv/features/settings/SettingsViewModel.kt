@@ -36,7 +36,34 @@ class SettingsViewModel(
     private val epgDao: tv.own.owntv.core.database.dao.EpgDao,
     private val importFinalizer: tv.own.owntv.core.sync.ImportFinalizer,
     private val channelDao: tv.own.owntv.core.database.dao.ChannelDao,
+    private val historyDao: tv.own.owntv.core.database.dao.HistoryDao,
+    private val epgRepository: tv.own.owntv.core.repository.EpgRepository,
+    private val epgSourceStore: tv.own.owntv.core.epg.EpgSourceStore,
 ) : ViewModel() {
+
+    // Semi-auto EPG: after a playlist import, if the playlist has a guide URL we offer to sync the EPG now
+    // (instead of the old slow auto-sync). "Sync now" shows a live programme count, just like the import.
+    private var pendingEpgSource: SourceEntity? = null
+    private val _epgSync = MutableStateFlow<EpgSyncUi>(EpgSyncUi.Hidden)
+    val epgSync: StateFlow<EpgSyncUi> = _epgSync.asStateFlow()
+
+    fun syncPendingEpg() {
+        val src = pendingEpgSource ?: return
+        viewModelScope.launch { runSemiAutoEpgSync(src, epgRepository, epgSourceStore) { _epgSync.value = it } }
+    }
+
+    /** Skip (from the prompt) or acknowledge (after Done) — either way, close the EPG flow. */
+    fun dismissPendingEpg() { pendingEpgSource = null; _epgSync.value = EpgSyncUi.Hidden }
+
+    /** Clear the active profile's watch history (the "recently watched" / continue rows). #26
+     *  [type] null = everything; otherwise just LIVE / MOVIE / SERIES. */
+    fun clearWatchHistory(type: tv.own.owntv.core.model.MediaType? = null) {
+        viewModelScope.launch {
+            val pid = settings.activeProfileId.first()
+            if (pid < 0) return@launch
+            if (type == null) historyDao.clear(pid) else historyDao.clearType(pid, type)
+        }
+    }
 
     /** Stored EPG programme count for a source — the row shows it as the EPG status. */
     fun epgCount(sourceId: Long): kotlinx.coroutines.flow.Flow<Int> = epgDao.countForSource(sourceId)
@@ -141,6 +168,20 @@ class SettingsViewModel(
         settings.updateCheckOnStart.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     fun setUpdateCheckOnStart(enabled: Boolean) { viewModelScope.launch { settings.setUpdateCheckOnStart(enabled) } }
 
+    val resumeLastChannel: StateFlow<Boolean> =
+        settings.resumeLastChannel.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    fun setResumeLastChannel(enabled: Boolean) { viewModelScope.launch { settings.setResumeLastChannel(enabled) } }
+
+    // Per-profile startup landing (v4.0.0): Home / Last channel / Live·Favorites.
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val startupMode: StateFlow<tv.own.owntv.features.settings.data.StartupMode> =
+        settings.activeProfileId
+            .flatMapLatest { settings.startupMode(it) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, tv.own.owntv.features.settings.data.StartupMode.HOME)
+    fun setStartupMode(mode: tv.own.owntv.features.settings.data.StartupMode) {
+        viewModelScope.launch { settings.setStartupMode(settings.activeProfileId.first(), mode) }
+    }
+
     val resumeMode: StateFlow<SettingsRepository.ResumeMode> =
         settings.resumeMode.stateIn(viewModelScope, SharingStarted.Eagerly, SettingsRepository.ResumeMode.ASK)
     fun setResumeMode(name: String) {
@@ -177,6 +218,10 @@ class SettingsViewModel(
 
     val uiZoomPercent: StateFlow<Int> = settings.uiZoomPercent.stateIn(viewModelScope, SharingStarted.Eagerly, UiZoom.DEFAULT)
     fun setUiZoom(percent: Int) { viewModelScope.launch { settings.setUiZoomPercent(UiZoom.clamp(percent)) } }
+
+    val animationLevel: StateFlow<tv.own.owntv.ui.theme.AnimationLevel> =
+        settings.animationLevel.stateIn(viewModelScope, SharingStarted.Eagerly, tv.own.owntv.ui.theme.AnimationLevel.FULL)
+    fun setAnimationLevel(level: tv.own.owntv.ui.theme.AnimationLevel) { viewModelScope.launch { settings.setAnimationLevel(level) } }
 
     /** Source ids flagged "refresh on startup". */
     val refreshSourceIds: StateFlow<Set<Long>> = settings.refreshSourceIds
@@ -240,6 +285,11 @@ class SettingsViewModel(
                         // shown on the EPG Sources screen, per the separated-EPG design).
                         val counts = importFinalizer.finalize(source)
                         _importState.value = ImportState.Success(counts.summary(includeEpg = false))
+                        // Offer a one-tap EPG sync if this playlist actually has a guide feed.
+                        if (epgRepository.guideUrl(source) != null) {
+                            pendingEpgSource = source
+                            _epgSync.value = EpgSyncUi.Ask(source.name)
+                        }
                     }
                     is SyncResult.Failed -> _importState.value = ImportState.Failed(friendlySyncError(r.message, connectivity.isOnlineNow()))
                     SyncResult.Cancelled -> _importState.value = ImportState.Idle
