@@ -22,7 +22,9 @@ import tv.own.owntv.core.database.entity.SourceEntity
 import tv.own.owntv.core.network.ConnectivityObserver
 import tv.own.owntv.core.repository.SourceRepository
 import tv.own.owntv.core.sync.ImportStage
+import tv.own.owntv.core.sync.SyncContentTypes
 import tv.own.owntv.core.sync.SyncResult
+import tv.own.owntv.core.sync.work.CatalogSyncScheduler
 import tv.own.owntv.core.util.friendlySyncError
 import tv.own.owntv.core.database.dao.resolveExistingProfileId
 import tv.own.owntv.core.launcher.LauncherIntegrationRepository
@@ -46,6 +48,7 @@ class SettingsViewModel(
     private val epgRepository: tv.own.owntv.core.repository.EpgRepository,
     private val epgSourceStore: tv.own.owntv.core.epg.EpgSourceStore,
     private val launcherIntegrationRepository: LauncherIntegrationRepository,
+    private val catalogSyncScheduler: CatalogSyncScheduler,
 ) : ViewModel() {
     companion object {
         private const val TAG = "OwnTVHome"
@@ -312,12 +315,26 @@ class SettingsViewModel(
     private val _progress = MutableStateFlow<ImportStage?>(null)
     val progress: StateFlow<ImportStage?> = _progress.asStateFlow()
 
-    fun addXtream(name: String, server: String, user: String, pass: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) = runImport(refreshOnStart) { pid ->
-        sourceRepository.addXtreamSource(
-            pid, name.ifBlank { "My IPTV" }, server.trim(), user.trim(), pass,
-            userAgent.trim().takeIf { it.isNotBlank() },
-            epgUrl.trim().takeIf { it.isNotBlank() },
-        )
+    fun addXtream(
+        name: String,
+        server: String,
+        user: String,
+        pass: String,
+        userAgent: String = "",
+        epgUrl: String = "",
+        refreshOnStart: Boolean = false,
+        syncLive: Boolean = true,
+        syncMovies: Boolean = true,
+        syncSeries: Boolean = true,
+    ) {
+        val priority = SyncContentTypes(syncLive, syncMovies, syncSeries)
+        runImport(refreshOnStart, priority, enqueueRemainder = true) { pid ->
+            sourceRepository.addXtreamSource(
+                pid, name.ifBlank { "My IPTV" }, server.trim(), user.trim(), pass,
+                userAgent.trim().takeIf { it.isNotBlank() },
+                epgUrl.trim().takeIf { it.isNotBlank() },
+            )
+        }
     }
 
     fun addM3u(name: String, url: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) = runImport(refreshOnStart) { pid ->
@@ -328,7 +345,12 @@ class SettingsViewModel(
         )
     }
 
-    private fun runImport(refreshOnStart: Boolean = false, addSource: suspend (Long) -> SourceEntity) {
+    private fun runImport(
+        refreshOnStart: Boolean = false,
+        contentTypes: SyncContentTypes = SyncContentTypes(),
+        enqueueRemainder: Boolean = false,
+        addSource: suspend (Long) -> SourceEntity,
+    ) {
         viewModelScope.launch {
             _importState.value = ImportState.Running
             _progress.value = null
@@ -337,13 +359,14 @@ class SettingsViewModel(
                 Log.d(TAG, "runImport profile=$pid refreshOnStart=$refreshOnStart")
                 val source = addSource(pid)
                 settings.setSourceRefresh(source.id, refreshOnStart)
-                when (val r = sourceRepository.sync(source, onProgress = { _progress.value = it })) {
+                when (val r = sourceRepository.sync(source, onProgress = { _progress.value = it }, contentTypes = contentTypes)) {
                     SyncResult.Success -> {
                         // Settings playlist add: content breakdown only (EPG syncs silently and is
                         // shown on the EPG Sources screen, per the separated-EPG design).
                         val counts = importFinalizer.finalize(source)
                         Log.d(TAG, "runImport sync success sourceId=${source.id} profile=$pid")
                         refreshActiveTvHome(allowBrowsableRequest = true)
+                        if (enqueueRemainder) enqueueRemainderSync(source, contentTypes)
                         _importState.value = ImportState.Success(counts.summary(includeEpg = false))
                         // Offer a one-tap EPG sync if this playlist actually has a guide feed.
                         if (epgRepository.guideUrl(source) != null) {
@@ -368,6 +391,7 @@ class SettingsViewModel(
             _importState.value = ImportState.Running
             _progress.value = null
             Log.d(TAG, "resync sourceId=${source.id}")
+            catalogSyncScheduler.cancelSync(source.id)
             when (val r = sourceRepository.sync(source, onProgress = { _progress.value = it })) {
                 SyncResult.Success -> {
                     val counts = importFinalizer.finalize(source)
@@ -384,6 +408,7 @@ class SettingsViewModel(
     fun delete(source: SourceEntity) {
         viewModelScope.launch {
             Log.d(TAG, "delete sourceId=${source.id}")
+            catalogSyncScheduler.cancelSync(source.id)
             sourceRepository.deleteSource(source)
             if (defaultSourceId.value == source.id) settings.setDefaultSource(-1L)
             refreshActiveTvHome(allowBrowsableRequest = true)
@@ -399,5 +424,12 @@ class SettingsViewModel(
         val pid = profileDao.resolveExistingProfileId(settings.activeProfileId.first()) ?: return
         Log.d(TAG, "refreshActiveTvHome profile=$pid allowBrowsable=$allowBrowsableRequest")
         launcherIntegrationRepository.refreshProfile(pid, allowBrowsableRequest)
+    }
+
+    private fun enqueueRemainderSync(source: SourceEntity, priority: SyncContentTypes) {
+        val remainder = SyncContentTypes().remainderAfter(priority)
+        if (remainder.hasAny) {
+            catalogSyncScheduler.enqueueSync(source.id, reason = "add_remainder", contentTypes = remainder)
+        }
     }
 }

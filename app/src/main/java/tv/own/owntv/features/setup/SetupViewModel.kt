@@ -17,7 +17,9 @@ import tv.own.owntv.core.database.entity.SourceEntity
 import tv.own.owntv.core.network.ConnectivityObserver
 import tv.own.owntv.core.repository.SourceRepository
 import tv.own.owntv.core.sync.ImportStage
+import tv.own.owntv.core.sync.SyncContentTypes
 import tv.own.owntv.core.sync.SyncResult
+import tv.own.owntv.core.sync.work.CatalogSyncScheduler
 import tv.own.owntv.core.util.Pin
 import tv.own.owntv.core.util.friendlySyncError
 import tv.own.owntv.core.launcher.LauncherIntegrationRepository
@@ -40,6 +42,7 @@ class SetupViewModel(
     private val epgRepository: tv.own.owntv.core.repository.EpgRepository,
     private val epgSourceStore: tv.own.owntv.core.epg.EpgSourceStore,
     private val launcherIntegrationRepository: LauncherIntegrationRepository,
+    private val catalogSyncScheduler: CatalogSyncScheduler,
 ) : ViewModel() {
 
     // Semi-auto EPG: after the first playlist imports, offer a one-tap guide sync (with a live count) if it
@@ -89,8 +92,20 @@ class SetupViewModel(
         }
     }
 
-    fun startXtream(name: String, server: String, username: String, password: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) =
-        runImport(refreshOnStart) { profileId ->
+    fun startXtream(
+        name: String,
+        server: String,
+        username: String,
+        password: String,
+        userAgent: String = "",
+        epgUrl: String = "",
+        refreshOnStart: Boolean = false,
+        syncLive: Boolean = true,
+        syncMovies: Boolean = true,
+        syncSeries: Boolean = true,
+    ) {
+        val priority = SyncContentTypes(syncLive, syncMovies, syncSeries)
+        runImport(refreshOnStart, priority, enqueueRemainder = true) { profileId ->
             sourceRepository.addXtreamSource(
                 profileId = profileId,
                 name = name.ifBlank { "My IPTV" },
@@ -101,6 +116,7 @@ class SetupViewModel(
                 epgUrl = epgUrl.trim().takeIf { it.isNotBlank() },
             )
         }
+    }
 
     fun startM3u(name: String, url: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) =
         runImport(refreshOnStart) { profileId ->
@@ -113,7 +129,12 @@ class SetupViewModel(
             )
         }
 
-    private fun runImport(refreshOnStart: Boolean = false, addSource: suspend (Long) -> SourceEntity) {
+    private fun runImport(
+        refreshOnStart: Boolean = false,
+        contentTypes: SyncContentTypes = SyncContentTypes(),
+        enqueueRemainder: Boolean = false,
+        addSource: suspend (Long) -> SourceEntity,
+    ) {
         viewModelScope.launch {
             _state.value = ImportState.Running
             _progress.value = null
@@ -121,11 +142,12 @@ class SetupViewModel(
                 val profileId = createdProfileId.takeIf { it > 0 } ?: ensureFallbackProfile()
                 val source = addSource(profileId)
                 settings.setSourceRefresh(source.id, refreshOnStart)
-                when (val result = sourceRepository.sync(source, onProgress = { _progress.value = it })) {
+                when (val result = sourceRepository.sync(source, onProgress = { _progress.value = it }, contentTypes = contentTypes)) {
                     SyncResult.Success -> {
                         // Just the playlist content — EPG is added separately (Settings → EPG sources).
                         val counts = importFinalizer.finalize(source)
                         runCatching { launcherIntegrationRepository.refreshProfile(profileId) }
+                        if (enqueueRemainder) enqueueRemainderSync(source, contentTypes)
                         _state.value = ImportState.Success(counts.summary(includeEpg = false))
                         if (epgRepository.guideUrl(source) != null) {
                             pendingEpgSource = source
@@ -140,6 +162,13 @@ class SetupViewModel(
             } catch (e: Exception) {
                 _state.value = ImportState.Failed(friendlySyncError(e.message, connectivity.isOnlineNow()))
             }
+        }
+    }
+
+    private fun enqueueRemainderSync(source: SourceEntity, priority: SyncContentTypes) {
+        val remainder = SyncContentTypes().remainderAfter(priority)
+        if (remainder.hasAny) {
+            catalogSyncScheduler.enqueueSync(source.id, reason = "add_remainder", contentTypes = remainder)
         }
     }
 

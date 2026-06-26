@@ -118,7 +118,10 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         AddSourceScreen(
             initial = src,
             initialRefresh = src.id in refreshIds,
-            onStartXtream = { n, server, u, p, ua, epg, refresh -> vm.updateSource(src.id, n, server, u, p, ua, epg, refresh); editingSource = null },
+            onStartXtream = { n, server, u, p, ua, epg, refresh, _, _, _ ->
+                vm.updateSource(src.id, n, server, u, p, ua, epg, refresh)
+                editingSource = null
+            },
             onStartM3u = { n, url, ua, epg, refresh -> vm.updateSource(src.id, n, url, "", "", ua, epg, refresh); editingSource = null },
             onBack = { editingSource = null },
             modifier = modifier,
@@ -129,7 +132,9 @@ fun ManageSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     if (showAdd) {
         when (val s = importState) {
             SettingsViewModel.ImportState.Idle -> AddSourceScreen(
-                onStartXtream = { n, server, u, p, ua, epg, refresh -> vm.addXtream(n, server, u, p, ua, epg, refresh) },
+                onStartXtream = { n, server, u, p, ua, epg, refresh, live, movies, series ->
+                    vm.addXtream(n, server, u, p, ua, epg, refresh, live, movies, series)
+                },
                 onStartM3u = { n, url, ua, epg, refresh -> vm.addM3u(n, url, ua, epg, refresh) },
                 onBack = { showAdd = false },
                 modifier = modifier,

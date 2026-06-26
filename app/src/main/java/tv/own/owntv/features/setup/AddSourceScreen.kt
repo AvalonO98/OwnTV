@@ -46,7 +46,18 @@ private enum class SourceKind { XTREAM, M3U }
 
 @Composable
 fun AddSourceScreen(
-    onStartXtream: (name: String, server: String, user: String, pass: String, userAgent: String, epgUrl: String, refreshOnStart: Boolean) -> Unit,
+    onStartXtream: (
+        name: String,
+        server: String,
+        user: String,
+        pass: String,
+        userAgent: String,
+        epgUrl: String,
+        refreshOnStart: Boolean,
+        syncLive: Boolean,
+        syncMovies: Boolean,
+        syncSeries: Boolean,
+    ) -> Unit,
     onStartM3u: (name: String, url: String, userAgent: String, epgUrl: String, refreshOnStart: Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -64,12 +75,16 @@ fun AddSourceScreen(
     var epgUrl by remember { mutableStateOf(initial?.epgUrl ?: "") }
     var userAgent by remember { mutableStateOf(initial?.userAgent ?: "") }
     var refreshOnStart by remember { mutableStateOf(initialRefresh) }
+    var syncLive by remember { mutableStateOf(true) }
+    var syncMovies by remember { mutableStateOf(true) }
+    var syncSeries by remember { mutableStateOf(true) }
     var showFileBrowser by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
 
+    val showContentToggles = kind == SourceKind.XTREAM && !editing
     val canStart = when (kind) {
-        SourceKind.XTREAM -> server.isNotBlank() && username.isNotBlank() && password.isNotBlank()
+        SourceKind.XTREAM -> server.isNotBlank() && username.isNotBlank() && password.isNotBlank() && (syncLive || syncMovies || syncSeries)
         SourceKind.M3U -> m3uUrl.isNotBlank()
     }
 
@@ -133,6 +148,19 @@ fun AddSourceScreen(
             Spacer(Modifier.height(16.dp))
             ToggleRow(label = "Refresh on startup", desc = "Re-sync this source when the app opens", checked = refreshOnStart) { refreshOnStart = it }
 
+            if (showContentToggles) {
+                Spacer(Modifier.height(20.dp))
+                Text("Sync first", style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+                Spacer(Modifier.height(4.dp))
+                Text("Pick what to import now. The rest syncs in the background.", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+                Spacer(Modifier.height(10.dp))
+                ToggleRow(label = "Live TV", desc = "Channels and categories", checked = syncLive) { syncLive = it }
+                Spacer(Modifier.height(8.dp))
+                ToggleRow(label = "Movies", desc = "VOD movie catalog", checked = syncMovies) { syncMovies = it }
+                Spacer(Modifier.height(8.dp))
+                ToggleRow(label = "Series", desc = "TV series catalog", checked = syncSeries) { syncSeries = it }
+            }
+
             Spacer(Modifier.height(28.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OwnTVButton("Back", onClick = onBack, style = OwnTVButtonStyle.SECONDARY)
@@ -141,7 +169,7 @@ fun AddSourceScreen(
                     label = if (editing) "Save" else "Start Import",
                     onClick = {
                         when (kind) {
-                            SourceKind.XTREAM -> onStartXtream(name, server, username, password, userAgent, epgUrl, refreshOnStart)
+                            SourceKind.XTREAM -> onStartXtream(name, server, username, password, userAgent, epgUrl, refreshOnStart, syncLive, syncMovies, syncSeries)
                             SourceKind.M3U -> onStartM3u(name, m3uUrl, userAgent, epgUrl, refreshOnStart)
                         }
                     },

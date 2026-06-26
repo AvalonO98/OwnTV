@@ -96,7 +96,11 @@ fun Onboarding(firstRun: Boolean, onDone: () -> Unit, onCancel: () -> Unit, modi
                 onSkip = { vm.finish(onDone) },
             )
             Step.ADD_SOURCE -> AddSourceScreen(
-                onStartXtream = { name, server, user, pass, ua, epg, refresh -> vm.startXtream(name, server, user, pass, ua, epg, refresh); importOrigin = Step.ADD_SOURCE; step = Step.IMPORTING },
+                onStartXtream = { name, server, user, pass, ua, epg, refresh, live, movies, series ->
+                    vm.startXtream(name, server, user, pass, ua, epg, refresh, live, movies, series)
+                    importOrigin = Step.ADD_SOURCE
+                    step = Step.IMPORTING
+                },
                 onStartM3u = { name, url, ua, epg, refresh -> vm.startM3u(name, url, ua, epg, refresh); importOrigin = Step.ADD_SOURCE; step = Step.IMPORTING },
                 onBack = { step = Step.ADD_CONTENT },
             )
