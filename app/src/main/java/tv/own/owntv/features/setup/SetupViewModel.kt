@@ -3,11 +3,14 @@ package tv.own.owntv.features.setup
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tv.own.owntv.core.backup.BackupManager
 import tv.own.owntv.core.database.dao.ProfileDao
 import tv.own.owntv.core.database.dao.SourceDao
@@ -75,6 +78,7 @@ class SetupViewModel(
     val progress: StateFlow<ImportStage?> = _progress.asStateFlow()
 
     private var createdProfileId = -1L
+    private var importJob: Job? = null
 
     /** Creates the profile (not active yet); the rest of onboarding attaches content to it. */
     fun createProfile(name: String, avatarId: Int, isKids: Boolean, pin: String?, onCreated: (Long) -> Unit = {}) {
@@ -135,34 +139,48 @@ class SetupViewModel(
         enqueueRemainder: Boolean = false,
         addSource: suspend (Long) -> SourceEntity,
     ) {
-        viewModelScope.launch {
+        importJob?.cancel()
+        val job = viewModelScope.launch {
             _state.value = ImportState.Running
             _progress.value = null
+            var source: SourceEntity? = null
             try {
                 val profileId = createdProfileId.takeIf { it > 0 } ?: ensureFallbackProfile()
-                val source = addSource(profileId)
+                source = addSource(profileId)
                 settings.setSourceRefresh(source.id, refreshOnStart)
                 when (val result = sourceRepository.sync(source, onProgress = { _progress.value = it }, contentTypes = contentTypes)) {
-                    SyncResult.Success -> {
+                    is SyncResult.Success -> {
                         // Just the playlist content — EPG is added separately (Settings → EPG sources).
                         val counts = importFinalizer.finalize(source)
                         runCatching { launcherIntegrationRepository.refreshProfile(profileId) }
                         if (enqueueRemainder) enqueueRemainderSync(source, contentTypes)
-                        _state.value = ImportState.Success(counts.summary(includeEpg = false))
+                        _state.value = ImportState.Success(counts.summary(includeEpg = false).withWarnings(result))
                         if (epgRepository.guideUrl(source) != null) {
                             pendingEpgSource = source
                             _epgSync.value = tv.own.owntv.features.settings.EpgSyncUi.Ask(source.name)
                         }
                     }
-                    is SyncResult.Failed -> _state.value = ImportState.Failed(friendlySyncError(result.message, connectivity.isOnlineNow()))
-                    SyncResult.Cancelled -> _state.value = ImportState.Idle
+                    is SyncResult.Failed -> {
+                        cleanupFailedAdd(source)
+                        _state.value = ImportState.Failed(friendlySyncError(result.message, connectivity.isOnlineNow()))
+                    }
+                    SyncResult.Cancelled -> {
+                        cleanupFailedAdd(source)
+                        _state.value = ImportState.Idle
+                    }
                 }
             } catch (c: CancellationException) {
+                cleanupFailedAdd(source)
+                _state.value = ImportState.Idle
+                _progress.value = null
                 throw c
             } catch (e: Exception) {
+                cleanupFailedAdd(source)
                 _state.value = ImportState.Failed(friendlySyncError(e.message, connectivity.isOnlineNow()))
             }
         }
+        importJob = job
+        job.invokeOnCompletion { if (importJob == job) importJob = null }
     }
 
     private fun enqueueRemainderSync(source: SourceEntity, priority: SyncContentTypes) {
@@ -189,7 +207,8 @@ class SetupViewModel(
      * same [state]/[progress] as [runImport], so the wizard can show the import screen.
      */
     fun linkExisting(sourceIds: Set<Long>) {
-        viewModelScope.launch {
+        importJob?.cancel()
+        val job = viewModelScope.launch {
             _state.value = ImportState.Running
             _progress.value = null
             try {
@@ -198,24 +217,31 @@ class SetupViewModel(
                 val sources = sourceDao.getAllOnce().filter { it.id in sourceIds }
                 var total = tv.own.owntv.core.sync.SyncCounts(0, 0, 0, 0)
                 var failure: String? = null
+                val warnings = mutableListOf<String>()
                 for (source in sources) {
                     when (val result = sourceRepository.sync(source, onProgress = { _progress.value = it })) {
-                        SyncResult.Success -> {
+                        is SyncResult.Success -> {
                             val c = importFinalizer.finalize(source)
                             total = tv.own.owntv.core.sync.SyncCounts(total.channels + c.channels, total.movies + c.movies, total.series + c.series, total.epg + c.epg)
+                            result.warningSummary()?.let { warnings.add(it) }
                         }
                         is SyncResult.Failed -> failure = result.message
                         SyncResult.Cancelled -> {}
                     }
                 }
                 runCatching { launcherIntegrationRepository.refreshProfile(pid) }
-                _state.value = failure?.let { ImportState.Failed(friendlySyncError(it, connectivity.isOnlineNow())) } ?: ImportState.Success(total.summary(includeEpg = true))
+                val summary = listOf(total.summary(includeEpg = true), *warnings.toTypedArray()).joinToString("\n")
+                _state.value = failure?.let { ImportState.Failed(friendlySyncError(it, connectivity.isOnlineNow())) } ?: ImportState.Success(summary)
             } catch (c: CancellationException) {
+                _state.value = ImportState.Idle
+                _progress.value = null
                 throw c
             } catch (e: Exception) {
                 _state.value = ImportState.Failed(friendlySyncError(e.message, connectivity.isOnlineNow()))
             }
         }
+        importJob = job
+        job.invokeOnCompletion { if (importJob == job) importJob = null }
     }
 
     /** Restore everything from a backup file (replaces profiles & sources, then activates one). */
@@ -240,6 +266,13 @@ class SetupViewModel(
         _progress.value = null
     }
 
+    fun cancelImport() {
+        importJob?.cancel()
+        importJob = null
+        _state.value = ImportState.Idle
+        _progress.value = null
+    }
+
     /** Completes onboarding → makes the new profile active, routing the app into the shell. */
     fun finish(onDone: () -> Unit = {}) {
         viewModelScope.launch {
@@ -247,4 +280,16 @@ class SetupViewModel(
             onDone()
         }
     }
+
+    private suspend fun cleanupFailedAdd(source: SourceEntity?) {
+        if (source == null) return
+        withContext(NonCancellable) {
+            catalogSyncScheduler.cancelSync(source.id)
+            runCatching { sourceRepository.deleteSource(source) }
+            runCatching { settings.setSourceRefresh(source.id, false) }
+        }
+    }
+
+    private fun String.withWarnings(result: SyncResult.Success): String =
+        result.warningSummary()?.let { "$this\n$it" } ?: this
 }

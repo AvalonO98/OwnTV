@@ -110,6 +110,7 @@ fun Onboarding(firstRun: Boolean, onDone: () -> Unit, onCancel: () -> Unit, modi
                 processed = progress?.processed ?: 0,
                 onContinue = { vm.finish(onDone) }, // playlist + its EPG synced (auto)
                 onRetry = { vm.reset(); step = importOrigin },
+                onCancel = { vm.cancelImport(); step = importOrigin },
             )
             Step.EXISTING -> ExistingSourcesScreen(
                 sources = existing,
@@ -305,12 +306,14 @@ private fun ImportProgressScreen(
     processed: Int,
     onContinue: () -> Unit,
     onRetry: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     val colors = OwnTVTheme.colors
     val fr = remember { FocusRequester() }
     LaunchedEffect(state) {
         if (state is SetupViewModel.ImportState.Success || state is SetupViewModel.ImportState.Failed) runCatching { fr.requestFocus() }
     }
+    BackHandler(enabled = state is SetupViewModel.ImportState.Running || state is SetupViewModel.ImportState.Idle) { onCancel() }
     Centered {
         when (state) {
             SetupViewModel.ImportState.Running, SetupViewModel.ImportState.Idle -> {
@@ -319,6 +322,8 @@ private fun ImportProgressScreen(
                 Text("Importing ${stageLabel.lowercase()}…", style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
                 Spacer(Modifier.height(8.dp))
                 Text(if (processed > 0) formatCount(processed) else "Connecting…", style = MaterialTheme.typography.headlineLarge, color = colors.primary)
+                Spacer(Modifier.height(24.dp))
+                OwnTVButton("Cancel", onClick = onCancel, style = OwnTVButtonStyle.SECONDARY)
             }
             is SetupViewModel.ImportState.Success -> {
                 Text("All set!", style = MaterialTheme.typography.headlineLarge, color = colors.onSurface)

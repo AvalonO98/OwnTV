@@ -1,5 +1,6 @@
 package tv.own.owntv.features.settings
 
+import kotlinx.coroutines.CancellationException
 import tv.own.owntv.core.database.entity.SourceEntity
 import tv.own.owntv.core.epg.EpgSourceStore
 import tv.own.owntv.core.repository.EpgRepository
@@ -21,10 +22,14 @@ suspend fun runSemiAutoEpgSync(
     // Show up in Settings → EPG like any other feed (so the user can re-sync / delete it there).
     val epgSource = store.getAll().firstOrNull { it.url == url } ?: store.add(source.name, url, source.userAgent)
     val now = System.currentTimeMillis()
-    runCatching {
+    try {
         epgRepository.refreshUrl(epgSource.id, epgSource.url, epgSource.userAgent) { count -> setState(EpgSyncUi.Syncing(count)) }
+        store.setSynced(epgSource.id, now, null)
+        setState(EpgSyncUi.Done)
+    } catch (c: CancellationException) {
+        throw c
+    } catch (e: Exception) {
+        store.setSynced(epgSource.id, now, e.message)
+        setState(EpgSyncUi.Failed(e.message ?: "Guide sync failed"))
     }
-        .onSuccess { store.setSynced(epgSource.id, now, null) }
-        .onFailure { store.setSynced(epgSource.id, now, it.message) }
-    setState(EpgSyncUi.Done)
 }

@@ -7,15 +7,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tv.own.owntv.core.database.dao.ProfileDao
 import tv.own.owntv.core.database.dao.SourceDao
 import tv.own.owntv.core.database.entity.SourceEntity
@@ -24,6 +30,8 @@ import tv.own.owntv.core.repository.SourceRepository
 import tv.own.owntv.core.sync.ImportStage
 import tv.own.owntv.core.sync.SyncContentTypes
 import tv.own.owntv.core.sync.SyncResult
+import tv.own.owntv.core.sync.SyncCounts
+import tv.own.owntv.core.sync.work.CatalogSyncState
 import tv.own.owntv.core.sync.work.CatalogSyncScheduler
 import tv.own.owntv.core.util.friendlySyncError
 import tv.own.owntv.core.database.dao.resolveExistingProfileId
@@ -98,8 +106,14 @@ class SettingsViewModel(
     fun epgCount(sourceId: Long): kotlinx.coroutines.flow.Flow<Int> = epgDao.countForSource(sourceId)
 
     /** Content counts (channels/movies/series) for a source — shown on each Playlists row. */
-    fun contentCounts(sourceId: Long): kotlinx.coroutines.flow.Flow<tv.own.owntv.core.sync.SyncCounts> =
-        kotlinx.coroutines.flow.flow { emit(importFinalizer.contentCounts(sourceId)) }
+    fun contentCounts(sourceId: Long): kotlinx.coroutines.flow.Flow<SyncCounts> =
+        catalogSyncScheduler.observeSync(sourceId)
+            .onStart { emit(CatalogSyncState.Idle) }
+            .filter { !it.isActive }
+            .map { importFinalizer.contentCounts(sourceId) }
+
+    fun syncState(sourceId: Long): kotlinx.coroutines.flow.Flow<CatalogSyncState> =
+        catalogSyncScheduler.observeSync(sourceId)
 
     sealed interface ImportState {
         data object Idle : ImportState
@@ -315,6 +329,8 @@ class SettingsViewModel(
     private val _progress = MutableStateFlow<ImportStage?>(null)
     val progress: StateFlow<ImportStage?> = _progress.asStateFlow()
 
+    private var importJob: Job? = null
+
     fun addXtream(
         name: String,
         server: String,
@@ -351,58 +367,63 @@ class SettingsViewModel(
         enqueueRemainder: Boolean = false,
         addSource: suspend (Long) -> SourceEntity,
     ) {
-        viewModelScope.launch {
+        importJob?.cancel()
+        val job = viewModelScope.launch {
             _importState.value = ImportState.Running
             _progress.value = null
+            var source: SourceEntity? = null
             try {
                 val pid = profileDao.resolveExistingProfileId(settings.activeProfileId.first()) ?: return@launch
                 Log.d(TAG, "runImport profile=$pid refreshOnStart=$refreshOnStart")
-                val source = addSource(pid)
+                source = addSource(pid)
                 settings.setSourceRefresh(source.id, refreshOnStart)
                 when (val r = sourceRepository.sync(source, onProgress = { _progress.value = it }, contentTypes = contentTypes)) {
-                    SyncResult.Success -> {
+                    is SyncResult.Success -> {
                         // Settings playlist add: content breakdown only (EPG syncs silently and is
                         // shown on the EPG Sources screen, per the separated-EPG design).
                         val counts = importFinalizer.finalize(source)
                         Log.d(TAG, "runImport sync success sourceId=${source.id} profile=$pid")
-                        refreshActiveTvHome(allowBrowsableRequest = true)
+                        runCatching { refreshActiveTvHome(allowBrowsableRequest = true) }
                         if (enqueueRemainder) enqueueRemainderSync(source, contentTypes)
-                        _importState.value = ImportState.Success(counts.summary(includeEpg = false))
+                        _importState.value = ImportState.Success(counts.summary(includeEpg = false).withWarnings(r))
                         // Offer a one-tap EPG sync if this playlist actually has a guide feed.
                         if (epgRepository.guideUrl(source) != null) {
                             pendingEpgSource = source
                             _epgSync.value = EpgSyncUi.Ask(source.name)
                         }
                     }
-                    is SyncResult.Failed -> _importState.value = ImportState.Failed(friendlySyncError(r.message, connectivity.isOnlineNow()))
-                    SyncResult.Cancelled -> _importState.value = ImportState.Idle
+                    is SyncResult.Failed -> {
+                        cleanupFailedAdd(source)
+                        _importState.value = ImportState.Failed(friendlySyncError(r.message, connectivity.isOnlineNow()))
+                    }
+                    SyncResult.Cancelled -> {
+                        cleanupFailedAdd(source)
+                        _importState.value = ImportState.Idle
+                    }
                 }
             } catch (c: CancellationException) {
+                cleanupFailedAdd(source)
+                _importState.value = ImportState.Idle
+                _progress.value = null
                 throw c
             } catch (e: Exception) {
+                cleanupFailedAdd(source)
                 _importState.value = ImportState.Failed(friendlySyncError(e.message, connectivity.isOnlineNow()))
             }
         }
+        importJob = job
+        job.invokeOnCompletion { if (importJob == job) importJob = null }
     }
 
-    /** Re-sync an existing source, driving the same import-progress UI as adding one. */
+    /** Re-sync an existing source through WorkManager so it can continue after leaving this screen. */
     fun resync(source: SourceEntity) {
-        viewModelScope.launch {
-            _importState.value = ImportState.Running
-            _progress.value = null
-            Log.d(TAG, "resync sourceId=${source.id}")
-            catalogSyncScheduler.cancelSync(source.id)
-            when (val r = sourceRepository.sync(source, onProgress = { _progress.value = it })) {
-                SyncResult.Success -> {
-                    val counts = importFinalizer.finalize(source)
-                    Log.d(TAG, "resync sync success sourceId=${source.id}")
-                    refreshActiveTvHome(allowBrowsableRequest = true)
-                    _importState.value = ImportState.Success(counts.summary(includeEpg = false))
-                }
-                is SyncResult.Failed -> _importState.value = ImportState.Failed(friendlySyncError(r.message, connectivity.isOnlineNow()))
-                SyncResult.Cancelled -> _importState.value = ImportState.Idle
-            }
-        }
+        Log.d(TAG, "resync enqueue sourceId=${source.id}")
+        catalogSyncScheduler.enqueueSync(source.id, reason = "manual_resync")
+    }
+
+    fun cancelResync(source: SourceEntity) {
+        Log.d(TAG, "resync cancel sourceId=${source.id}")
+        catalogSyncScheduler.cancelSync(source.id)
     }
 
     fun delete(source: SourceEntity) {
@@ -420,6 +441,13 @@ class SettingsViewModel(
         _progress.value = null
     }
 
+    fun cancelImport() {
+        importJob?.cancel()
+        importJob = null
+        _importState.value = ImportState.Idle
+        _progress.value = null
+    }
+
     private suspend fun refreshActiveTvHome(allowBrowsableRequest: Boolean = true) {
         val pid = profileDao.resolveExistingProfileId(settings.activeProfileId.first()) ?: return
         Log.d(TAG, "refreshActiveTvHome profile=$pid allowBrowsable=$allowBrowsableRequest")
@@ -432,4 +460,16 @@ class SettingsViewModel(
             catalogSyncScheduler.enqueueSync(source.id, reason = "add_remainder", contentTypes = remainder)
         }
     }
+
+    private suspend fun cleanupFailedAdd(source: SourceEntity?) {
+        if (source == null) return
+        withContext(NonCancellable) {
+            catalogSyncScheduler.cancelSync(source.id)
+            runCatching { sourceRepository.deleteSource(source) }
+            runCatching { settings.setSourceRefresh(source.id, false) }
+        }
+    }
+
+    private fun String.withWarnings(result: SyncResult.Success): String =
+        result.warningSummary()?.let { "$this\n$it" } ?: this
 }
