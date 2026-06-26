@@ -109,7 +109,7 @@ class SetupViewModel(
         syncSeries: Boolean = true,
     ) {
         val priority = SyncContentTypes(syncLive, syncMovies, syncSeries)
-        runImport(refreshOnStart, priority, enqueueRemainder = true) { profileId ->
+        runImport(refreshOnStart, priority, enqueueRemainder = true, requiresNetwork = true) { profileId ->
             sourceRepository.addXtreamSource(
                 profileId = profileId,
                 name = name.ifBlank { "My IPTV" },
@@ -123,7 +123,7 @@ class SetupViewModel(
     }
 
     fun startM3u(name: String, url: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) =
-        runImport(refreshOnStart) { profileId ->
+        runImport(refreshOnStart, requiresNetwork = !url.isLocalPlaylistPath()) { profileId ->
             sourceRepository.addM3uSource(
                 profileId = profileId,
                 name = name.ifBlank { "My Playlist" },
@@ -137,6 +137,7 @@ class SetupViewModel(
         refreshOnStart: Boolean = false,
         contentTypes: SyncContentTypes = SyncContentTypes(),
         enqueueRemainder: Boolean = false,
+        requiresNetwork: Boolean = true,
         addSource: suspend (Long) -> SourceEntity,
     ) {
         importJob?.cancel()
@@ -145,6 +146,10 @@ class SetupViewModel(
             _progress.value = null
             var source: SourceEntity? = null
             try {
+                if (requiresNetwork && !connectivity.isOnlineNow()) {
+                    _state.value = ImportState.Failed(friendlySyncError(null, online = false))
+                    return@launch
+                }
                 val profileId = createdProfileId.takeIf { it > 0 } ?: ensureFallbackProfile()
                 source = addSource(profileId)
                 settings.setSourceRefresh(source.id, refreshOnStart)
@@ -182,6 +187,9 @@ class SetupViewModel(
         importJob = job
         job.invokeOnCompletion { if (importJob == job) importJob = null }
     }
+
+    private fun String.isLocalPlaylistPath(): Boolean =
+        startsWith("/") || startsWith("file://") || startsWith("content://")
 
     private fun enqueueRemainderSync(source: SourceEntity, priority: SyncContentTypes) {
         val remainder = SyncContentTypes().remainderAfter(priority)

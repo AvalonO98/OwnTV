@@ -344,7 +344,7 @@ class SettingsViewModel(
         syncSeries: Boolean = true,
     ) {
         val priority = SyncContentTypes(syncLive, syncMovies, syncSeries)
-        runImport(refreshOnStart, priority, enqueueRemainder = true) { pid ->
+        runImport(refreshOnStart, priority, enqueueRemainder = true, requiresNetwork = true) { pid ->
             sourceRepository.addXtreamSource(
                 pid, name.ifBlank { "My IPTV" }, server.trim(), user.trim(), pass,
                 userAgent.trim().takeIf { it.isNotBlank() },
@@ -353,7 +353,10 @@ class SettingsViewModel(
         }
     }
 
-    fun addM3u(name: String, url: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) = runImport(refreshOnStart) { pid ->
+    fun addM3u(name: String, url: String, userAgent: String = "", epgUrl: String = "", refreshOnStart: Boolean = false) = runImport(
+        refreshOnStart,
+        requiresNetwork = !url.isLocalPlaylistPath(),
+    ) { pid ->
         sourceRepository.addM3uSource(
             pid, name.ifBlank { "My Playlist" }, url.trim(),
             userAgent.trim().takeIf { it.isNotBlank() },
@@ -365,6 +368,7 @@ class SettingsViewModel(
         refreshOnStart: Boolean = false,
         contentTypes: SyncContentTypes = SyncContentTypes(),
         enqueueRemainder: Boolean = false,
+        requiresNetwork: Boolean = true,
         addSource: suspend (Long) -> SourceEntity,
     ) {
         importJob?.cancel()
@@ -373,6 +377,10 @@ class SettingsViewModel(
             _progress.value = null
             var source: SourceEntity? = null
             try {
+                if (requiresNetwork && !connectivity.isOnlineNow()) {
+                    _importState.value = ImportState.Failed(friendlySyncError(null, online = false))
+                    return@launch
+                }
                 val pid = profileDao.resolveExistingProfileId(settings.activeProfileId.first()) ?: return@launch
                 Log.d(TAG, "runImport profile=$pid refreshOnStart=$refreshOnStart")
                 source = addSource(pid)
@@ -414,6 +422,9 @@ class SettingsViewModel(
         importJob = job
         job.invokeOnCompletion { if (importJob == job) importJob = null }
     }
+
+    private fun String.isLocalPlaylistPath(): Boolean =
+        startsWith("/") || startsWith("file://") || startsWith("content://")
 
     /** Re-sync an existing source through WorkManager so it can continue after leaving this screen. */
     fun resync(source: SourceEntity) {
