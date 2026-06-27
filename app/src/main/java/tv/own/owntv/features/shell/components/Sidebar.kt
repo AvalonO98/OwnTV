@@ -2,6 +2,7 @@ package tv.own.owntv.features.shell.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,10 +48,9 @@ import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /**
- * Layer 1 — the MD3 navigation panel. Expands to a drawer (profile card + labels) when it holds
- * focus, and collapses to an icon rail when focus moves into a submenu. Settings is pinned at the
- * bottom; the browse list in the middle scrolls if it ever exceeds the height, so Settings is never
- * clipped.
+ * Layer 1 — the MD3 navigation panel. A FIXED icon rail: brand logo at the top (Phase 2), the nav items
+ * (browse + Settings) vertically centered in the middle (Phase 3), and the profile avatar pinned at the
+ * bottom (Phase 1). The logo is display-only (not focusable); everything else is a focusable nav item.
  */
 @Composable
 fun Sidebar(
@@ -70,8 +70,12 @@ fun Sidebar(
     var hasFocus by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     // Phase 2 — the nav is a FIXED icon rail: it never expands or collapses, so the layout never jumps on
-    // the D-pad and the profile avatar stays pinned top-left. Full section labels live in the content panes.
+    // the D-pad. The profile avatar is pinned at the bottom (Phase 1). Full section labels live in the panes.
     val expanded = false
+    // Phase 4 — Search left the rail for the top bar, so when Search is the active section there's no nav
+    // item to receive the entry-focus redirect below. Fall back to Home so BACK / left out of Search still
+    // lands in the rail instead of stranding focus in the content area.
+    val focusSection = if (selected == MainSection.SEARCH) MainSection.HOME else selected
 
     Column(
         modifier = modifier
@@ -88,10 +92,70 @@ fun Sidebar(
             }
             .focusGroup()
             .width(Dimens.SidebarWidthCollapsed)
-            .background(colors.surfaceContainer)
+            .background(colors.background) // Phase 6 — unified panel surface
             .padding(horizontal = 12.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // Phase 2 — brand mark pinned at the top of the rail. Non-focusable, so D-pad entry into the
+        // panel still redirects to the selected nav item below (see onFocusChanged) — it can't trap
+        // an "up" press from the first nav item either.
+        AppLogo()
+        Spacer(Modifier.height(12.dp))
+
+        // Phase 3 — the nav is vertically centered between the logo and the profile, BUT the rail
+        // scrolls when UI zoom makes the fixed item list taller than the panel (otherwise the top/bottom
+        // items get clipped and become unreachable). A scrollable Box with Center alignment centers the
+        // nav when it fits and pans through it when it overflows; Compose brings each item into view as
+        // D-pad focus moves to it.
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (expanded) {
+                SectionLabel("Browse")
+                Spacer(Modifier.height(4.dp))
+            }
+
+            Column(modifier = Modifier.fillMaxWidth()) {
+                MainSection.entries.filter { it.isBrowse }.forEach { section ->
+                    NavItem(
+                        section = section,
+                        active = section == selected,
+                        expanded = expanded,
+                        count = counts(section),
+                        onClick = { onSelect(section) },
+                        modifier = if (section == focusSection) {
+                            Modifier.focusRequester(selectedItemFocusRequester)
+                        } else Modifier,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                // Settings closes out the nav block.
+                NavItem(
+                    section = MainSection.SETTINGS,
+                    active = selected == MainSection.SETTINGS,
+                    expanded = expanded,
+                    count = 0,
+                    onClick = { onSelect(MainSection.SETTINGS) },
+                    modifier = if (focusSection == MainSection.SETTINGS) {
+                        Modifier.focusRequester(selectedItemFocusRequester)
+                    } else Modifier,
+                )
+            }
+        }
+
+        // Phase 1 — profile relocated to the bottom of the rail (was top). A divider groups the account
+        // avatar apart from the nav items above it.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+                .height(1.dp)
+                .background(colors.outlineVariant),
+        )
         ProfileCard(
             expanded = expanded,
             avatarId = avatarId,
@@ -100,54 +164,27 @@ fun Sidebar(
             onPickAvatar = onPickAvatar,
             onSwitchProfile = onSwitchProfile,
         )
+    }
+}
 
-        Spacer(Modifier.height(16.dp))
-        if (expanded) {
-            SectionLabel("Browse")
-            Spacer(Modifier.height(4.dp))
-        }
-
-        // Scrollable middle so Settings (pinned below) is never clipped.
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
-        ) {
-            MainSection.entries.filter { it.isBrowse }.forEach { section ->
-                NavItem(
-                    section = section,
-                    active = section == selected,
-                    expanded = expanded,
-                    count = counts(section),
-                    onClick = { onSelect(section) },
-                    modifier = if (section == selected) {
-                        Modifier.focusRequester(selectedItemFocusRequester)
-                    } else Modifier,
-                )
-                Spacer(Modifier.height(4.dp))
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp)
-                .height(1.dp)
-                .background(colors.outlineVariant),
-        )
-        Spacer(Modifier.height(8.dp))
-
-        NavItem(
-            section = MainSection.SETTINGS,
-            active = selected == MainSection.SETTINGS,
-            expanded = expanded,
-            count = 0,
-            onClick = { onSelect(MainSection.SETTINGS) },
-            modifier = if (selected == MainSection.SETTINGS) {
-                Modifier.focusRequester(selectedItemFocusRequester)
-            } else Modifier,
-        )
+/**
+ * Brand mark at the top of the rail — the cyan play-triangle inside a rounded-square outline, the same
+ * geometry as [ic_launcher_foreground] (kept consistent with the planned branded splash). Drawn from
+ * [OwnTVIcon.PLAY] (filled) inside an outlined [Box] so it matches the visual weight of the 56dp avatar
+ * below. Decorative only: a plain Box is not focusable, so it neither captures D-pad focus nor traps an
+ * "up" press. Tints with [OwnTVTheme.colors].primary so it follows the user's accent like the nav icons.
+ */
+@Composable
+private fun AppLogo(modifier: Modifier = Modifier) {
+    val colors = OwnTVTheme.colors
+    Box(
+        modifier = modifier
+            .size(56.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .border(width = 2.dp, color = colors.primary, shape = RoundedCornerShape(20.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        OwnTVIcon(icon = OwnTVIcon.PLAY, tint = colors.primary, modifier = Modifier.size(26.dp), filled = true)
     }
 }
 
@@ -278,6 +315,12 @@ private fun NavItem(
             focused -> colors.onSurface
             else -> colors.onSurfaceVariant
         }
+        // The icon tints to the ACCENT when selected (the label keeps `content`), matching the mockup.
+        val iconColor = when {
+            active -> colors.primary
+            focused -> colors.onSurface
+            else -> colors.onSurfaceVariant
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -289,7 +332,7 @@ private fun NavItem(
             // shared `content` colour. Still — no per-frame animation on the always-visible nav.
             NavDuotoneIcon(
                 section = section,
-                color = content,
+                color = iconColor,
                 modifier = Modifier.size(28.dp),
             )
             if (expanded) {

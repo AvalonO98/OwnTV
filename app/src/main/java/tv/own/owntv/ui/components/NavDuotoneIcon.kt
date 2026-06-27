@@ -5,21 +5,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import tv.own.owntv.features.shell.MainSection
 
 /**
- * Monochrome **duotone** nav icon: one colour, two opacities — a soft 30% "body" + crisp full-opacity key
- * shapes. Single-colour so it tints with the theme (muted when idle, accent when selected) like the old nav
- * icons, but more refined. 100-unit design grid. Drawn still — no per-frame animation on the nav.
+ * Rank 1 — Neo Signal Duotone (Phase 7). SVG shapes from
+ * extras/owntv_future_nav_icons_ranked.html, rendered on a crisp 100-unit Canvas grid
+ * with clean integer coordinates so icons stay sharp at any UI zoom.
  */
 @Composable
 fun NavDuotoneIcon(
@@ -29,79 +28,148 @@ fun NavDuotoneIcon(
 ) {
     Canvas(modifier) {
         val s = size.minDimension / 100f
-        val bg = color.copy(alpha = 0.30f)
-        val soft = color.copy(alpha = 0.45f)
+        val soft = color.copy(alpha = 0.43f)
+        val fill = color
         val stroke = Stroke(width = 7f * s, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        val softStroke = Stroke(width = 6f * s, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        val thin = Stroke(width = 5f * s, cap = StrokeCap.Round, join = StrokeJoin.Round)
 
         fun o(x: Float, y: Float) = Offset(x * s, y * s)
-        fun poly(close: Boolean, vararg pts: Float): Path = Path().apply {
-            var i = 0
-            while (i < pts.size) { if (i == 0) moveTo(pts[0] * s, pts[1] * s) else lineTo(pts[i] * s, pts[i + 1] * s); i += 2 }
-            if (close) close()
+        fun sz(w: Float, h: Float) = Size(w * s, h * s)
+
+        fun poly(vararg pts: Float): Path = Path().apply {
+            var i = 0; while (i < pts.size) { if (i == 0) moveTo(pts[0] * s, pts[1] * s) else lineTo(pts[i] * s, pts[i + 1] * s); i += 2 }
         }
-        fun rrect(x: Float, y: Float, w: Float, h: Float, r: Float, c: Color, st: Stroke?) =
-            drawRoundRect(c, topLeft = o(x, y), size = Size(w * s, h * s), cornerRadius = CornerRadius(r * s, r * s),
-                style = st ?: androidx.compose.ui.graphics.drawscope.Fill)
+        fun polyC(vararg pts: Float): Path = poly(*pts).apply { close() }
+
+        fun DrawScope.rect(x: Float, y: Float, w: Float, h: Float, r: Float, c: Color, st: Stroke?) =
+            drawRoundRect(c, o(x, y), sz(w, h), CornerRadius(r * s, r * s), style = st ?: Fill)
+
+        fun DrawScope.dot(cx: Float, cy: Float, r: Float, c: Color) =
+            drawCircle(c, radius = r * s, center = o(cx, cy))
+
+        fun DrawScope.arc(c: Color, cx: Float, cy: Float, r: Float, startD: Float, sweepD: Float, st: Stroke) {
+            val tl = o(cx - r, cy - r); drawArc(c, startD, sweepD, false, tl, sz(r * 2, r * 2), style = st)
+        }
 
         when (section) {
+            // ---- Home — house + roof + signal dash --------------------------------
             MainSection.HOME -> {
-                drawPath(poly(true, 50f, 20f, 84f, 48f, 84f, 84f, 16f, 84f, 16f, 48f), bg)
-                drawPath(poly(false, 16f, 50f, 50f, 22f, 84f, 50f), color, style = stroke)
-                drawPath(poly(true, 42f, 84f, 42f, 62f, 58f, 62f, 58f, 84f), color)
+                drawPath(polyC(17f,47f, 50f,17f, 83f,47f, 83f,83f, 17f,83f), soft)
+                drawPath(poly(17f,47f, 50f,17f, 83f,47f), fill, style = stroke)
+                drawPath(poly(27f,83f, 27f,44f), fill, style = stroke)
+                drawPath(poly(73f,83f, 73f,44f), fill, style = stroke)
+                drawPath(poly(42f,42f, 58f,42f), fill, style = stroke) // signal dash
+                drawPath(polyC(40f,83f, 40f,61f, 60f,61f, 60f,83f), soft)
             }
+
+            // ---- Live TV — screen + stand + broadcast arcs -----------------------
             MainSection.LIVE_TV -> {
-                rrect(18f, 32f, 64f, 42f, 7f, bg, null)
-                rrect(18f, 32f, 64f, 42f, 7f, color, stroke)
-                drawPath(poly(true, 44f, 44f, 44f, 62f, 62f, 53f), color)
-                drawArc(soft, 327f, 66f, useCenter = false, topLeft = o(22f, 10f), size = Size(52f * s, 52f * s), style = softStroke)
+                rect(17f, 29f, 67f, 44f, 10f, fill, stroke)
+                drawPath(polyC(46f,42f, 46f,60f, 62f,51f), fill, style = Fill)
+                drawPath(poly(33f,83f, 67f,83f), soft, style = stroke)
+                drawPath(poly(50f,73f, 50f,83f), soft, style = stroke)
+                arc(soft, 50f, 15f, 20f, 210f, 100f, thin)
+                arc(soft, 50f, 8f, 12f, 210f, 100f, thin)
+                dot(50f, 22f, 2.5f, fill)
             }
+
+            // ---- Movies — film strip sprocket + play ------------------------------
             MainSection.MOVIES -> {
-                drawCircle(bg, radius = 26f * s, center = o(50f, 46f))
-                drawCircle(color, radius = 26f * s, center = o(50f, 46f), style = stroke)
-                drawCircle(color, radius = 6f * s, center = o(50f, 46f))
-                drawCircle(color, radius = 4.5f * s, center = o(50f, 28f))
-                drawCircle(color, radius = 4.5f * s, center = o(50f, 64f))
-                drawCircle(color, radius = 4.5f * s, center = o(32f, 46f))
-                drawCircle(color, radius = 4.5f * s, center = o(68f, 46f))
-                rrect(26f, 78f, 48f, 7f, 3.5f, color, null)
+                drawPath(polyC(21f,33f, 76f,21f, 79f,36f, 24f,48f), soft)
+                drawPath(poly(33f,30f, 44f,43f), soft, style = thin)
+                drawPath(poly(51f,26f, 62f,39f), soft, style = thin)
+                drawPath(poly(68f,23f, 77f,33f), soft, style = thin)
+                rect(21f, 43f, 58f, 38f, 9f, fill, stroke)
+                drawPath(polyC(46f,55f, 46f,70f, 60f,62f), fill, style = Fill)
             }
+
+            // ---- Series — stacked screens + episode dots --------------------------
             MainSection.SERIES -> {
-                rotate(-7f, o(50f, 50f)) { drawRoundRect(bg, topLeft = o(26f, 22f), size = Size(48f * s, 56f * s), cornerRadius = CornerRadius(7f * s, 7f * s)) }
-                rotate(3f, o(50f, 50f)) { drawRoundRect(color.copy(alpha = 0.18f), topLeft = o(26f, 22f), size = Size(48f * s, 56f * s), cornerRadius = CornerRadius(7f * s, 7f * s)) }
-                rrect(28f, 24f, 44f, 52f, 6f, color, stroke)
-                drawPath(poly(true, 44f, 40f, 44f, 60f, 61f, 50f), color)
+                rect(21f, 24f, 53f, 37f, 8f, soft, stroke)
+                rect(30f, 36f, 49f, 40f, 9f, fill, stroke)
+                drawPath(poly(42f,50f, 66f,50f), fill, style = stroke)
+                drawPath(poly(42f,63f, 57f,63f), fill, style = stroke)
+                dot(37f, 83f, 3f, fill)
+                dot(50f, 83f, 3f, fill)
+                dot(63f, 83f, 3f, soft)
             }
-            MainSection.SEARCH -> {
-                drawCircle(bg, radius = 22f * s, center = o(42f, 42f))
-                drawCircle(color, radius = 22f * s, center = o(42f, 42f), style = stroke)
-                drawLine(color, o(58f, 58f), o(80f, 80f), strokeWidth = 7f * s, cap = StrokeCap.Round)
-            }
+
+            // ---- Downloads — down-arrow tray + accent arcs -----------------------
             MainSection.DOWNLOADS -> {
-                drawPath(poly(true, 44f, 18f, 56f, 18f, 56f, 50f, 68f, 50f, 50f, 70f, 32f, 50f, 44f, 50f), color)
-                drawPath(poly(false, 26f, 76f, 26f, 84f, 74f, 84f, 74f, 76f), soft, style = softStroke)
+                drawPath(poly(50f,19f, 50f,58f), fill, style = stroke)
+                drawPath(poly(35f,43f, 50f,58f, 65f,43f), fill, style = stroke)
+                drawPath(poly(23f,73f, 23f,80f, 77f,80f, 77f,73f), soft, style = stroke)
+                drawPath(poly(31f,85f, 69f,85f), soft, style = stroke)
+                arc(soft, 21f, 16f, 12f, 220f, 90f, thin) // left accent
+                arc(soft, 79f, 16f, 12f, 50f, 90f, thin)  // right accent
+                dot(50f, 67f, 3f, fill)
             }
+
+            // ---- Guide — grid with channel blocks + dot --------------------------
             MainSection.EPG -> {
-                rrect(16f, 22f, 68f, 9f, 4.5f, bg, null)
-                rrect(16f, 37f, 68f, 9f, 4.5f, bg, null)
-                rrect(16f, 52f, 68f, 9f, 4.5f, bg, null)
-                rrect(16f, 22f, 22f, 9f, 4.5f, color, null)
-                rrect(44f, 22f, 14f, 9f, 4.5f, color, null)
-                rrect(16f, 37f, 34f, 9f, 4.5f, color, null)
-                rrect(16f, 52f, 12f, 9f, 4.5f, color, null)
-                rrect(34f, 52f, 30f, 9f, 4.5f, color, null)
+                rect(17f, 21f, 67f, 63f, 10f, fill, stroke)
+                drawPath(poly(33f,21f, 33f,83f), fill, style = stroke)
+                drawPath(poly(17f,42f, 83f,42f), fill, style = stroke)
+                drawPath(poly(17f,63f, 83f,63f), fill, style = stroke)
+                drawPath(poly(44f,33f, 57f,33f), soft, style = stroke)
+                drawPath(poly(44f,54f, 69f,54f), soft, style = stroke)
+                drawPath(poly(44f,75f, 63f,75f), soft, style = stroke)
+                dot(25f, 32f, 3f, fill)
             }
+
+            // ---- Search — magnifier + corner brackets + dash ---------------------
+            MainSection.SEARCH -> {
+                drawCircle(fill, radius = 24f * s, center = o(45f, 45f), style = stroke)
+                drawPath(poly(63f,63f, 82f,82f), fill, style = stroke)
+                drawPath(poly(21f,16f, 16f,16f, 16f,21f), soft, style = thin)
+                drawPath(poly(79f,16f, 84f,16f, 84f,21f), soft, style = thin)
+                drawPath(poly(16f,79f, 16f,84f, 21f,84f), soft, style = thin)
+                drawPath(poly(84f,79f, 84f,84f, 79f,84f), soft, style = thin)
+                drawPath(poly(35f,45f, 55f,45f), soft, style = stroke)
+            }
+
+            // ---- Settings — sliders + orbit accent --------------------------------
             MainSection.SETTINGS -> {
-                val gear = Path().apply {
-                    fillType = PathFillType.EvenOdd
-                    moveTo(50f * s, 16f * s); lineTo(55f * s, 30f * s); lineTo(69f * s, 26f * s); lineTo(65f * s, 40f * s)
-                    lineTo(79f * s, 49f * s); lineTo(65f * s, 58f * s); lineTo(69f * s, 72f * s); lineTo(55f * s, 68f * s)
-                    lineTo(50f * s, 82f * s); lineTo(45f * s, 68f * s); lineTo(31f * s, 72f * s); lineTo(35f * s, 58f * s)
-                    lineTo(21f * s, 49f * s); lineTo(35f * s, 40f * s); lineTo(31f * s, 26f * s); lineTo(45f * s, 30f * s); close()
-                    addOval(Rect(41f * s, 40f * s, 59f * s, 58f * s)) // centre hole (even-odd)
-                }
-                drawPath(gear, color)
+                drawPath(poly(20f,33f, 59f,33f), fill, style = stroke)
+                drawPath(poly(72f,33f, 83f,33f), fill, style = stroke)
+                drawCircle(fill, radius = 7f * s, center = o(65f, 33f), style = stroke)
+                drawPath(poly(20f,67f, 33f,67f), fill, style = stroke)
+                drawPath(poly(45f,67f, 83f,67f), fill, style = stroke)
+                drawCircle(fill, radius = 7f * s, center = o(39f, 67f), style = stroke)
+                drawPath(poly(50f,15f, 59f,21f, 69f,22f, 74f,30f), soft, style = thin)
             }
         }
+    }
+}
+
+/**
+ * Rank 1 — Profile icon (Phase 7). Person silhouette + star accent on 100-grid.
+ */
+@Composable
+fun ProfileIcon(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val s = size.minDimension / 100f
+        val soft = color.copy(alpha = 0.43f)
+        val fill = color
+        val stroke = Stroke(width = 7f * s, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+        fun o(x: Float, y: Float) = Offset(x * s, y * s)
+
+        // Head — circle
+        drawCircle(fill, radius = 13f * s, center = o(50f, 38f), style = stroke)
+        // Body arc — cubic bezier
+        val body = Path().apply {
+            moveTo(24f * s, 81f * s)
+            cubicTo(28f * s, 67f * s, 37f * s, 60f * s, 50f * s, 60f * s)
+            cubicTo(63f * s, 60f * s, 72f * s, 67f * s, 76f * s, 81f * s)
+        }
+        drawPath(body, fill, style = stroke)
+        // Star accent
+        val star = Path().apply {
+            moveTo(76f * s, 19f * s); lineTo(78f * s, 24f * s); lineTo(83f * s, 26f * s)
+            lineTo(78f * s, 28f * s); lineTo(76f * s, 33f * s); lineTo(74f * s, 28f * s)
+            lineTo(69f * s, 26f * s); lineTo(74f * s, 24f * s); close()
+        }
+        drawPath(star, soft, style = stroke)
     }
 }

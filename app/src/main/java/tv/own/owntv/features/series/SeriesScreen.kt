@@ -68,6 +68,9 @@ import androidx.compose.foundation.layout.width
 import tv.own.owntv.ui.components.SearchBar
 import tv.own.owntv.ui.components.SortChip
 import tv.own.owntv.ui.components.formatCount
+import tv.own.owntv.ui.components.ContentPanelFill
+import tv.own.owntv.ui.components.PreviewPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
@@ -153,7 +156,7 @@ private fun SeriesGrid(
         }
     }
 
-    Row(modifier = modifier.fillMaxSize().onFocusChanged { if (it.hasFocus) onChildFocused() }) {
+    Row(modifier = modifier.fillMaxSize().onFocusChanged { if (it.hasFocus) onChildFocused() }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         CategoryRail(
             categories = railItems.map { RailCategory(it.abbr, it.title, it.icon) },
             selectedIndex = selectedIndex,
@@ -164,6 +167,7 @@ private fun SeriesGrid(
             modifier = Modifier
                 .weight(1.8f)
                 .fillMaxSize()
+                .roundedPanel(fillColor = ContentPanelFill)
                 // Entering this pane must land on a poster, never the search bar: prefer the
                 // last-focused series, else the first one. onEnter fires only for directional entry
                 // from outside (internal moves don't re-trigger it).
@@ -220,6 +224,7 @@ private fun SeriesGrid(
                                 },
                                 onFocus = { vm.onSeriesFocused(s) },
                                 onClick = { vm.openSeries(s) },
+                                onLongClick = { vm.toggleFavorite(s) },
                             )
                         }
                     }
@@ -246,6 +251,7 @@ private fun SeriesGrid(
                                 },
                                 onFocus = { vm.onSeriesFocused(s) },
                                 onClick = { vm.openSeries(s) },
+                                onLongClick = { vm.toggleFavorite(s) },
                             )
                         }
                     }
@@ -253,7 +259,7 @@ private fun SeriesGrid(
             }
         }
 
-        Box(modifier = Modifier.weight(1f).fillMaxSize().padding(Dimens.GapLarge)) {
+        Box(modifier = Modifier.weight(1f).fillMaxSize().roundedPanel(fillColor = PreviewPanelFill).padding(Dimens.GapLarge)) {
             val s = selectedSeries
             if (s == null) {
                 PreviewPane(hint = "Focus a series, press OK to view episodes.")
@@ -514,11 +520,13 @@ private fun SeriesListRow(
     isFavorite: Boolean,
     onFocus: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = OwnTVTheme.colors
     FocusableSurface(
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         contentAlignment = Alignment.CenterStart,

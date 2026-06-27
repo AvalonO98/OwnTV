@@ -7,7 +7,6 @@ import coil3.SingletonImageLoader
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
-import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
@@ -21,18 +20,23 @@ import tv.own.owntv.di.playerModule
 
 class OwnTVApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
+        Perf.begin() // zero-point for the OwnTVPerf startup timeline (adb logcat -s OwnTVPerf)
         super.onCreate()
         startKoin {
             androidLogger(if (BuildConfig.DEBUG) Level.ERROR else Level.NONE)
             androidContext(this@OwnTVApp)
             modules(appModule, databaseModule, dataModule, playerModule)
         }
-        // Build the EPG Guide read-index once, in the background, for users who already have EPG synced
-        // (new EPG syncs ensure it themselves). It's permanent + auto-maintained, so this is a one-time
-        // build then an instant no-op on every later launch.
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            runCatching { GlobalContext.get().get<tv.own.owntv.core.repository.EpgRepository>().ensureEpgIndexes() }
-        }
+        Perf.stamp("koin-started")
+        // NOTE: cold start does ZERO heavy DB work. Index + ANALYZE maintenance is piggy-backed onto the
+        // operation that actually changes the data — ImportFinalizer.finalize() after every content sync, the
+        // EpgRepository refresh after every EPG sync, and the v5 migration on upgrade — never onto app launch.
+        // A previous build ran `ANALYZE movies`/`ANALYZE series` (a full scan of 170k+50k rows) here at EVERY
+        // cold start. On a low-end TV box's eMMC + CPU that saturated storage and the single DB connection at
+        // the precise moment the Movies/Series grids need their first read — which is exactly why the grids
+        // took seconds to appear. It was also redundant: content only ever changes via a sync, and every sync
+        // already re-runs ANALYZE in finalize(), so the launch-time re-analyze was pure recurring tax. With it
+        // off the launch path, the grids' first indexed query returns in well under a second.
     }
 
     /**

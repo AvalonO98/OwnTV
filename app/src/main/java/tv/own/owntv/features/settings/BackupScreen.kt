@@ -42,6 +42,7 @@ import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVSpinner
 import tv.own.owntv.ui.components.StorageBrowser
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /**
@@ -94,7 +95,7 @@ fun BackupScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .roundedPanel()
             // onEnter fires for any entry from outside the group — including our own dialog-close
             // restores (the dialogs live outside it) — so it must prefer the pending return button.
             .focusProperties {

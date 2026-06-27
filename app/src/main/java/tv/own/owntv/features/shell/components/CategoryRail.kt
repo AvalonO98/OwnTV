@@ -46,6 +46,8 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.SearchBar
+import tv.own.owntv.ui.components.RailPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
@@ -102,13 +104,14 @@ fun CategoryRail(
 
     // Fixed full-label column in the screen's Row — a real grid column (no overlay), so it takes its own
     // space and nothing reflows when focus enters/leaves it.
-    Box(modifier = modifier.fillMaxHeight().width(Dimens.RailWidthFixed)) {
+    Box(modifier = modifier.fillMaxHeight().width(Dimens.RailWidthFixed).roundedPanel(fillColor = RailPanelFill)) {
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxHeight()
                 .fillMaxWidth()
-                .background(colors.panel)
+                // LazyColumn fill is now transparent — the outer Box's roundedPanel surfaceContainerLowest
+                // shows through, keeping panel 1 the same colour as panels 2/3/4 (Phase 6).
                 .onFocusChanged {
                     // Spatial D-pad entry would land on whatever pill is horizontally aligned —
                     // redirect every entry (from the sidebar OR back from the content list) to the

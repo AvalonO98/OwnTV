@@ -13,9 +13,9 @@ import androidx.tv.material3.lightColorScheme
  * Available OwnTV themes. Persisted via DataStore and selectable from Settings → Theme.
  * SYSTEM follows the platform dark/light setting.
  */
-enum class ThemeMode { SYSTEM, AMOLED_DARK, LIGHT }
+enum class ThemeMode { SYSTEM, DARK, LIGHT }
 
-val LocalThemeMode = staticCompositionLocalOf { ThemeMode.AMOLED_DARK }
+val LocalThemeMode = staticCompositionLocalOf { ThemeMode.DARK }
 
 /** Map the resolved OwnTV tokens onto a tv-material3 M3 [ColorScheme]. */
 private fun schemeFrom(c: OwnTVColors): ColorScheme =
@@ -77,7 +77,7 @@ fun OwnTVTheme(
     content: @Composable () -> Unit,
 ) {
     val useDark = when (themeMode) {
-        ThemeMode.AMOLED_DARK -> true
+        ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
         ThemeMode.SYSTEM -> systemInDarkTheme
     }

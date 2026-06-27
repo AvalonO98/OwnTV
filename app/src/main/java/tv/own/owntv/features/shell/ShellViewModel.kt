@@ -10,12 +10,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tv.own.owntv.core.network.ConnectivityObserver
+import tv.own.owntv.core.weather.WeatherInfo
+import tv.own.owntv.core.weather.WeatherRepository
 import tv.own.owntv.core.database.dao.resolveExistingProfileId
 import tv.own.owntv.core.repository.SourceRepository
 import tv.own.owntv.core.launcher.LauncherIntegrationRepository
@@ -35,7 +39,8 @@ enum class MainSection(val label: String) {
     EPG("Guide"),
     SETTINGS("Settings"); // pinned at the bottom of the nav
 
-    val isBrowse: Boolean get() = this != SETTINGS
+    /** Shown as an icon in the left nav rail. Phase 4 moved Search to the top bar, so it's excluded. */
+    val isBrowse: Boolean get() = this != SETTINGS && this != SEARCH
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -46,6 +51,7 @@ class ShellViewModel(
     connectivity: ConnectivityObserver,
     private val launcherIntegrationRepository: LauncherIntegrationRepository,
     private val epgMigration: tv.own.owntv.core.epg.EpgMigration,
+    private val weatherRepository: WeatherRepository, // Phase 7
 ) : ViewModel() {
 
     companion object {
@@ -97,7 +103,7 @@ class ShellViewModel(
     }
 
     val themeMode: StateFlow<ThemeMode> = settings.themeMode
-        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.AMOLED_DARK)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.DARK)
 
     val uiZoomPercent: StateFlow<Int> = settings.uiZoomPercent
         .stateIn(viewModelScope, SharingStarted.Eagerly, UiZoom.DEFAULT)
@@ -133,6 +139,14 @@ class ShellViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "No source")
 
+    /** Phase 7 — weather chip. Refreshes when connectivity returns, cached 30 min by repository. */
+    val weather: StateFlow<WeatherInfo?> = connectivity.isOnline
+        .flatMapLatest { online ->
+            if (online) flow { emit(weatherRepository.get()) }
+            else flowOf(null as WeatherInfo?)
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null as WeatherInfo?)
+
     /** null = still loading; < 0 = first run (show setup wizard); >= 0 = active profile (show shell). */
     val activeProfileId: StateFlow<Long?> = settings.activeProfileId
         .map<Long, Long?> { it }
@@ -152,9 +166,9 @@ class ShellViewModel(
     /** Cycles through the available themes — wired to a temporary button until the Theme screen exists. */
     fun cycleTheme() {
         val next = when (themeMode.value) {
-            ThemeMode.AMOLED_DARK -> ThemeMode.LIGHT
+            ThemeMode.DARK -> ThemeMode.LIGHT
             ThemeMode.LIGHT -> ThemeMode.SYSTEM
-            ThemeMode.SYSTEM -> ThemeMode.AMOLED_DARK
+            ThemeMode.SYSTEM -> ThemeMode.DARK
         }
         setThemeMode(next)
     }

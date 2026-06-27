@@ -60,6 +60,7 @@ import tv.own.owntv.features.shell.components.PreviewPane
 import tv.own.owntv.features.shell.components.RailCategory
 import tv.own.owntv.features.shell.components.SettingsScreen
 import tv.own.owntv.features.shell.components.Sidebar
+import tv.own.owntv.features.shell.components.TopBar
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.own.owntv.ui.components.OwnTVIcon
@@ -88,6 +89,7 @@ fun OwnTVShell(
     onSetAvatar: (Int) -> Unit,
     profileName: String,
     sourceSummary: String,
+    weatherInfo: tv.own.owntv.core.weather.WeatherInfo? = null, // Phase 7
     activeProfileId: Long?,
     pendingDeepLink: LauncherDeepLink?,
     onDeepLinkConsumed: () -> Unit,
@@ -163,11 +165,15 @@ fun OwnTVShell(
         }
     }
 
-    // Eager-prefetch the Guide once at startup so even the FIRST open is instant (no spinner). The
-    // EpgViewModel is shared, so by the time the user navigates to the Guide its list is already populated;
-    // opening it then just silently refreshes. Skipped if the user is already in the Guide (it loads itself).
+    // Movies/Series/Live load on first open via their reactive Paging flows — their indexed first page is
+    // cheap, so they need NO preloading (a Live-TV-only user pays nothing for them). The TV Guide is the ONE
+    // exception: load() pulls every guide channel + a programme window, which is heavy enough that doing it on
+    // open felt slow. So warm EPG in the background shortly after the shell renders — opening the Guide is then
+    // instant, matching how it behaved before. (EpgScreen also calls load() on mount, so this is a pure pre-warm
+    // and is skipped if the user is already on EPG.)
     LaunchedEffect(Unit) {
-        if (selectedSection != MainSection.EPG) epgVm.load()
+        kotlinx.coroutines.delay(1_200)
+        if (selectedSection != MainSection.EPG) { tv.own.owntv.Perf.stamp("epg-preload"); epgVm.load() }
     }
 
     // Opening content from a browse screen goes fullscreen — UNLESS the player is already docked as a
@@ -201,7 +207,7 @@ fun OwnTVShell(
         Unit
     }
 
-    LaunchedEffect(Unit) { runCatching { sidebarFocus.requestFocus() } }
+    LaunchedEffect(Unit) { tv.own.owntv.Perf.stamp("shell-composed"); runCatching { sidebarFocus.requestFocus() } }
 
     LaunchedEffect(pendingDeepLink, activeProfileId) {
         val deepLink = pendingDeepLink ?: return@LaunchedEffect
@@ -283,121 +289,133 @@ fun OwnTVShell(
                 onFocused = { focusedLayer = ShellLayer.SIDEBAR },
             )
 
-            Box(
+            Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .background(colors.surface),
+                    // Phase 6 — unified panel surface: panels and content area share #102520 so the
+                    // rounded borders define regions on one continuous dark-green surface.
+                    .background(colors.background),
             ) {
-                when {
-                    selectedSection == MainSection.SETTINGS -> SettingsScreen(
-                        themeMode = themeMode,
-                        uiZoomPercent = uiZoomPercent,
-                        onSetZoom = onSetZoom,
-                        onOpenPlaylist = { /* Phase 6: open setup/playlist */ },
-                        openEpgAdd = openEpgAdd,
-                        onEpgAddConsumed = { openEpgAdd = false },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .onFocusChanged { if (it.hasFocus) focusedLayer = ShellLayer.CONTENT }
-                            .focusGroup(),
-                    )
-
-                    selectedSection == MainSection.HOME -> HomeScreen(
-                        vm = homeVm,
-                        onPlayMovie = { id, pos -> scope.launch { if (movieVm.playByIdAsync(id, pos)) openFullscreen(MainSection.MOVIES) } },
-                        onPlayEpisode = { seriesId, epId, pos -> scope.launch { if (seriesVm.playFromHomeAsync(seriesId, epId, pos)) openFullscreen(MainSection.SERIES) } },
-                        onPlayChannel = { id, zap -> scope.launch { if (liveVm.ensurePlayingByIdAsync(id, zap)) openFullscreen(MainSection.LIVE_TV) } },
-                        onChildFocused = { focusedLayer = ShellLayer.CONTENT },
-                        restoreFocus = restoreFocus,
-                        onRestored = { restoreFocus = false },
-                        previewEnabled = playerMode == PlayerMode.NONE,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-
-                    selectedSection == MainSection.SEARCH -> SearchScreen(
-                        onFullscreen = { openFullscreen() },
-                        // Open the actual series (its episode list), then switch to the Series section —
-                        // the screen shares this SeriesViewModel, so it shows the opened show.
-                        onOpenSeries = { series -> seriesVm.openSeries(series); onSelectSection(MainSection.SERIES) },
-                        onChildFocused = { focusedLayer = ShellLayer.CONTENT },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-
-                    selectedSection == MainSection.LIVE_TV -> LiveScreen(
-                        onFullscreen = { openFullscreen() },
-                        onChildFocused = { focusedLayer = ShellLayer.CONTENT },
-                        previewEnabled = playerMode == PlayerMode.NONE,
-                        restoreFocus = restoreFocus,
-                        onRestored = { restoreFocus = false },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-
-                    selectedSection == MainSection.MOVIES -> MoviesScreen(
-                        onFullscreen = { openFullscreen() },
-                        onChildFocused = { focusedLayer = ShellLayer.CONTENT },
-                        restoreFocus = restoreFocus,
-                        onRestored = { restoreFocus = false },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-
-                    selectedSection == MainSection.SERIES -> SeriesScreen(
-                        onFullscreen = { openFullscreen() },
-                        onChildFocused = { focusedLayer = ShellLayer.CONTENT },
-                        restoreFocus = restoreFocus,
-                        onRestored = { restoreFocus = false },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-
-                    selectedSection == MainSection.DOWNLOADS -> DownloadsScreen(
-                        onFullscreen = { openFullscreen() },
-                        onChildFocused = { focusedLayer = ShellLayer.CONTENT },
-                        restoreFocus = restoreFocus,
-                        onRestored = { restoreFocus = false },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-
-                    selectedSection == MainSection.EPG -> EpgScreen(
-                        onBack = { runCatching { sidebarFocus.requestFocus() } },
-                        onFullscreen = { openFullscreen() },
-                        onAddEpg = { openEpgAdd = true; onSelectSection(MainSection.SETTINGS) },
-                        restoreFocus = restoreFocus,
-                        onRestored = { restoreFocus = false },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .onFocusChanged { if (it.hasFocus) focusedLayer = ShellLayer.CONTENT }
-                            .focusGroup(),
-                    )
-
-                    else -> Row(modifier = Modifier.fillMaxSize()) {
-                        CategoryRail(
-                            categories = categories,
-                            selectedIndex = selectedRail,
-                            onSelect = { railSelection[selectedSection] = it },
-                            onFocused = { focusedLayer = ShellLayer.RAIL },
-                        )
-
-                        ContentPane(
-                            sectionTitle = selectedSection.label,
-                            categoryName = categories.getOrNull(selectedRail)?.fullName ?: "All",
-                            categoryAbbr = categories.getOrNull(selectedRail)?.abbr ?: "ALL",
-                            countLabel = placeholderCount(selectedSection),
-                            emptyIcon = selectedSection.emptyIcon,
-                            emptyMessage = "Content for ${selectedSection.label} arrives in a later phase. Add an M3U or Xtream source to populate this list.",
-                            onAddSource = { onSelectSection(MainSection.SETTINGS) },
+                // Phase 5 — top bar above the content (active section + Search pill + clock + playlist).
+                // Shown on EVERY section now, including Settings ("top bar same for all").
+                TopBar(
+                    sectionLabel = selectedSection.label,
+                    onSearchClick = { onSelectSection(MainSection.SEARCH) },
+                    playlistName = sourceSummary,
+                    weatherInfo = weatherInfo,
+                )
+                Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 6.dp)) {
+                    when {
+                        selectedSection == MainSection.SETTINGS -> SettingsScreen(
+                            themeMode = themeMode,
+                            uiZoomPercent = uiZoomPercent,
+                            onSetZoom = onSetZoom,
+                            onOpenPlaylist = { /* Phase 6: open setup/playlist */ },
+                            openEpgAdd = openEpgAdd,
+                            onEpgAddConsumed = { openEpgAdd = false },
                             modifier = Modifier
-                                .weight(1.4f)
+                                .fillMaxSize()
                                 .onFocusChanged { if (it.hasFocus) focusedLayer = ShellLayer.CONTENT }
                                 .focusGroup(),
                         )
 
-                        Box(
+                        selectedSection == MainSection.HOME -> HomeScreen(
+                            vm = homeVm,
+                            onPlayMovie = { id, pos -> scope.launch { if (movieVm.playByIdAsync(id, pos)) openFullscreen(MainSection.MOVIES) } },
+                            onPlayEpisode = { seriesId, epId, pos -> scope.launch { if (seriesVm.playFromHomeAsync(seriesId, epId, pos)) openFullscreen(MainSection.SERIES) } },
+                            onPlayChannel = { id, zap -> scope.launch { if (liveVm.ensurePlayingByIdAsync(id, zap)) openFullscreen(MainSection.LIVE_TV) } },
+                            onChildFocused = { focusedLayer = ShellLayer.CONTENT },
+                            restoreFocus = restoreFocus,
+                            onRestored = { restoreFocus = false },
+                            previewEnabled = playerMode == PlayerMode.NONE,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.SEARCH -> SearchScreen(
+                            onFullscreen = { openFullscreen() },
+                            // Open the actual series (its episode list), then switch to the Series section —
+                            // the screen shares this SeriesViewModel, so it shows the opened show.
+                            onOpenSeries = { series -> seriesVm.openSeries(series); onSelectSection(MainSection.SERIES) },
+                            onChildFocused = { focusedLayer = ShellLayer.CONTENT },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.LIVE_TV -> LiveScreen(
+                            onFullscreen = { openFullscreen() },
+                            onChildFocused = { focusedLayer = ShellLayer.CONTENT },
+                            previewEnabled = playerMode == PlayerMode.NONE,
+                            restoreFocus = restoreFocus,
+                            onRestored = { restoreFocus = false },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.MOVIES -> MoviesScreen(
+                            onFullscreen = { openFullscreen() },
+                            onChildFocused = { focusedLayer = ShellLayer.CONTENT },
+                            restoreFocus = restoreFocus,
+                            onRestored = { restoreFocus = false },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.SERIES -> SeriesScreen(
+                            onFullscreen = { openFullscreen() },
+                            onChildFocused = { focusedLayer = ShellLayer.CONTENT },
+                            restoreFocus = restoreFocus,
+                            onRestored = { restoreFocus = false },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.DOWNLOADS -> DownloadsScreen(
+                            onFullscreen = { openFullscreen() },
+                            onChildFocused = { focusedLayer = ShellLayer.CONTENT },
+                            restoreFocus = restoreFocus,
+                            onRestored = { restoreFocus = false },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+
+                        selectedSection == MainSection.EPG -> EpgScreen(
+                            onBack = { runCatching { sidebarFocus.requestFocus() } },
+                            onFullscreen = { openFullscreen() },
+                            onAddEpg = { openEpgAdd = true; onSelectSection(MainSection.SETTINGS) },
+                            restoreFocus = restoreFocus,
+                            onRestored = { restoreFocus = false },
                             modifier = Modifier
-                                .weight(1f)
                                 .fillMaxSize()
-                                .padding(Dimens.GapLarge),
-                        ) {
-                            PreviewPane(hint = "Select a channel to preview it here.")
+                                .onFocusChanged { if (it.hasFocus) focusedLayer = ShellLayer.CONTENT }
+                                .focusGroup(),
+                        )
+
+                        else -> Row(modifier = Modifier.fillMaxSize()) {
+                            CategoryRail(
+                                categories = categories,
+                                selectedIndex = selectedRail,
+                                onSelect = { railSelection[selectedSection] = it },
+                                onFocused = { focusedLayer = ShellLayer.RAIL },
+                            )
+
+                            ContentPane(
+                                sectionTitle = selectedSection.label,
+                                categoryName = categories.getOrNull(selectedRail)?.fullName ?: "All",
+                                categoryAbbr = categories.getOrNull(selectedRail)?.abbr ?: "ALL",
+                                countLabel = placeholderCount(selectedSection),
+                                emptyIcon = selectedSection.emptyIcon,
+                                emptyMessage = "Content for ${selectedSection.label} arrives in a later phase. Add an M3U or Xtream source to populate this list.",
+                                onAddSource = { onSelectSection(MainSection.SETTINGS) },
+                                modifier = Modifier
+                                    .weight(1.4f)
+                                    .onFocusChanged { if (it.hasFocus) focusedLayer = ShellLayer.CONTENT }
+                                    .focusGroup(),
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxSize()
+                                    .padding(Dimens.GapLarge),
+                            ) {
+                                PreviewPane(hint = "Select a channel to preview it here.")
+                            }
                         }
                     }
                 }
@@ -430,9 +448,12 @@ fun OwnTVShell(
             if (isFull && !liveOnExo) tv.own.owntv.player.SubtitleOverlay(player = player, modifier = Modifier.fillMaxSize())
             if (isFull) {
                 // CH+/CH- zap through the channel list of whichever section opened the current stream
-                // (Live TV or the Guide); never for VOD.
+                // (Live TV or the Guide); never for VOD. When live plays on ExoPlayer (liveOnExo=true) the
+                // mpv `player` is stopped so player.isLiveContent is false — the ExoPlayer engine is the one
+                // playing live, so we must check liveOnExo too (otherwise zap breaks for the common case).
+                val isLiveStream = liveOnExo || player.isLiveContent
                 val zap: ((Int) -> Unit)? = when {
-                    !player.isLiveContent -> null
+                    !isLiveStream -> null
                     zapSource == MainSection.EPG && epgCanZap -> epgVm::zap
                     zapSource == MainSection.LIVE_TV && liveCanZap -> liveVm::zap
                     else -> null

@@ -87,6 +87,15 @@ data class HomeUiState(
     val recentLive: List<ChannelEntity> = emptyList(),
     val favoriteLive: List<ChannelEntity> = emptyList(),
     val isEmpty: Boolean = true,
+    /**
+     * True until the first [HomeViewModel.loadHomeData] completes. Home's queries are profile-scoped and
+     * already indexed, but on a cold boot their first reads come off slow eMMC (pages not yet in the OS
+     * page cache) — that's the ~half-second gap between the shell painting and `home-data`. While that
+     * runs we render a skeleton so the landing screen paints its *structure* instantly instead of flashing
+     * the empty state (which looks wrong for a user who does have history). Flips to false the moment real
+     * data publishes, and stays false thereafter (refreshes don't re-skeleton).
+     */
+    val isLoading: Boolean = true,
 )
 
 class HomeViewModel(
@@ -159,9 +168,11 @@ class HomeViewModel(
                 recentLive = live,
                 favoriteLive = favLive,
                 isEmpty = movies.isEmpty() && series.isEmpty() && live.isEmpty() && favLive.isEmpty(),
+                isLoading = false,
             )
         }
         _uiState.value = state
+        tv.own.owntv.Perf.stamp("home-data")
     }
 
     private suspend fun buildHeroItems(

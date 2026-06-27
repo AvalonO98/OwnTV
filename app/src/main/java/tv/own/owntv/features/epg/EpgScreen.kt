@@ -7,6 +7,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
@@ -70,6 +72,8 @@ import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
+import tv.own.owntv.ui.components.ContentPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.components.OwnTVSpinner
 import tv.own.owntv.ui.components.SearchBar
 import tv.own.owntv.ui.theme.Dimens
@@ -132,13 +136,14 @@ fun EpgScreen(
     // No BackHandler here: the Guide is a top-level section, so Back is the shell's job (content →
     // sidebar → exit dialog). A screen-level handler would swallow Back forever and block app exit.
     LaunchedEffect(Unit) { vm.load() } // reload from DB each time the guide is opened
+    // Phase 6 fix — don't auto-focus the first channel when the guide mounts. The guide nav item
+    // keeps focus on click; RIGHT press from the sidebar enters the grid via focusProperties.onEnter
+    // (which routes to firstCell/tunedCell). Auto-focusing here stole the sidebar's focus on section
+    // switch, making the guide feel jumpy.
     LaunchedEffect(state.loading, state.channels.isNotEmpty()) {
-        // Auto-focus the grid once it's actually composed (while state.loading the spinner branch
-        // shows instead, so the cells aren't attached yet) — but never while typing a search, and
-        // never when returning from playback (the tuned-channel restore below handles that).
-        if (!state.loading && state.channels.isNotEmpty() && query.isBlank() && !restoreFocus) {
+        // Only auto-focus when a restore is pending (returning from playback to a specific channel).
+        if (!state.loading && state.channels.isNotEmpty() && restoreFocus) {
             kotlinx.coroutines.delay(80)
-            // tunedCell fallback: when the last-tuned channel IS row 0, firstCell isn't attached.
             if (runCatching { firstCell.requestFocus() }.isFailure) runCatching { tunedCell.requestFocus() }
         }
     }
@@ -202,7 +207,7 @@ fun EpgScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .roundedPanel(fillColor = ContentPanelFill)
             // Entry from the sidebar lands on the first channel — unless a restore is pending
             // (back from playback / dialog close), which onEnter routes to instead of hijacking.
             // onEnter only fires for entries from OUTSIDE the group — search bar / refresh / back
@@ -417,8 +422,11 @@ private fun EpgMatchReviewDialog(
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(60); runCatching { firstFocus.requestFocus() } }
 
+    // Popup(focusable=true) creates a hard focus boundary — clicking Accept/Skip removes an item
+    // from the LazyColumn, but focus stays inside instead of escaping to the main nav bar.
+    Popup(onDismissRequest = onDone, properties = PopupProperties(focusable = true)) {
     Box(
-        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)).focusGroup(),
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)),
         contentAlignment = Alignment.Center,
     ) {
         Column(Modifier.width(640.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(24.dp)) {
@@ -468,6 +476,7 @@ private fun EpgMatchReviewDialog(
             }
         }
     }
+    } // Popup
 }
 
 /**

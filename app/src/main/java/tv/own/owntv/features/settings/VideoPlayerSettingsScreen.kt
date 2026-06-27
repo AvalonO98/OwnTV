@@ -49,6 +49,7 @@ import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.theme.Dimens
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /** Common languages offered for the audio/subtitle preference (code → display name; "" = no preference). */
@@ -117,7 +118,7 @@ fun VideoPlayerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier)
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .roundedPanel()
             // onEnter fires for any entry from outside the group — including our own dialog-close
             // restores (the dialogs live outside it) — so it must prefer the pending return row.
             .focusProperties {

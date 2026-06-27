@@ -40,6 +40,7 @@ import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.StorageBrowser
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVTextField
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 private enum class SourceKind { XTREAM, M3U }
@@ -56,14 +57,14 @@ fun AddSourceScreen(
     val colors = OwnTVTheme.colors
     val editing = initial != null
     var kind by remember { mutableStateOf(if (initial?.type == SourceType.M3U) SourceKind.M3U else SourceKind.XTREAM) }
-    var name by remember { mutableStateOf(initial?.name ?: "") }
-    var server by remember { mutableStateOf(if (initial != null && initial.type == SourceType.XTREAM) initial.url else "") }
-    var username by remember { mutableStateOf(initial?.username ?: "") }
-    var password by remember { mutableStateOf(initial?.password ?: "") }
-    var m3uUrl by remember { mutableStateOf(if (initial != null && initial.type == SourceType.M3U) initial.url else "") }
-    var epgUrl by remember { mutableStateOf(initial?.epgUrl ?: "") }
-    var userAgent by remember { mutableStateOf(initial?.userAgent ?: "") }
-    var refreshOnStart by remember { mutableStateOf(initialRefresh) }
+    var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
+    var server by remember(initial) { mutableStateOf(if (initial != null && initial.type == SourceType.XTREAM) initial.url else "") }
+    var username by remember(initial) { mutableStateOf(initial?.username ?: "") }
+    var password by remember(initial) { mutableStateOf(initial?.password ?: "") }
+    var m3uUrl by remember(initial) { mutableStateOf(if (initial != null && initial.type == SourceType.M3U) initial.url else "") }
+    var epgUrl by remember(initial) { mutableStateOf(initial?.epgUrl ?: "") }
+    var userAgent by remember(initial) { mutableStateOf(initial?.userAgent ?: "") }
+    var refreshOnStart by remember(initialRefresh) { mutableStateOf(initialRefresh) }
     var showFileBrowser by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { firstFocus.requestFocus() } }
@@ -73,7 +74,7 @@ fun AddSourceScreen(
         SourceKind.M3U -> m3uUrl.isNotBlank()
     }
 
-    Box(modifier.fillMaxSize()) {
+    Box(modifier.fillMaxSize().roundedPanel()) {
       Column(
         modifier = Modifier
             .fillMaxSize()

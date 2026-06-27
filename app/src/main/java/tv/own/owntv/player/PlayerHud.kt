@@ -95,6 +95,7 @@ fun PlayerHud(
     val nav by player.nav.collectAsStateWithLifecycle()
     val volume by player.volume.collectAsStateWithLifecycle()
     val videoRes by player.videoRes.collectAsStateWithLifecycle()
+    val streamChips by player.streamChips.collectAsStateWithLifecycle()
     val audioCount by player.audioCount.collectAsStateWithLifecycle()
     val audioDelayMs by player.audioDelayMs.collectAsStateWithLifecycle()
     val subCount by player.subCount.collectAsStateWithLifecycle()
@@ -175,7 +176,7 @@ fun PlayerHud(
             Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(240.dp)
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))))
 
-            TopBar(player, isLive, videoRes, duration, onBack, modifier = Modifier.align(Alignment.TopStart))
+            TopBar(player, isLive, streamChips.ifEmpty { listOfNotNull(videoRes) }, duration, onBack, modifier = Modifier.align(Alignment.TopStart))
             if (isLive) ChannelCard(player, modifier = Modifier.align(Alignment.TopStart).padding(start = 28.dp, top = 92.dp))
 
             // Hide the transport (play/seek/prev/next) and bottom bar while an error is up — the error
@@ -246,7 +247,7 @@ fun PlayerHud(
 
 @Composable
 private fun TopBar(
-    player: PlaybackEngine, isLive: Boolean, videoRes: String?, duration: Long,
+    player: PlaybackEngine, isLive: Boolean, chips: List<String>, duration: Long,
     onBack: () -> Unit, modifier: Modifier = Modifier,
 ) {
     // Reactive meta so the title row updates instantly on a channel zap (the plain vars aren't observed).
@@ -265,7 +266,7 @@ private fun TopBar(
                 val parts = buildList {
                     meta.year?.takeIf { it.isNotBlank() }?.let { add(it) }
                     if (!isLive && durMin > 0) add("$durMin min")
-                    videoRes?.let { add(it) }
+                    addAll(chips) // aspect · resolution · fps · audio
                 }
                 parts.forEachIndexed { i, label ->
                     if (i > 0) Box(Modifier.size(3.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.3f)))

@@ -39,10 +39,12 @@ fun PosterCard(
     selected: Boolean = false,
     onFocus: () -> Unit = {},
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val colors = OwnTVTheme.colors
     FocusableSurface(
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier.onFocusChanged { if (it.hasFocus) onFocus() },
         selected = selected,
         shape = RoundedCornerShape(14.dp),

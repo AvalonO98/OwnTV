@@ -1,8 +1,10 @@
 package tv.own.owntv.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -23,6 +25,11 @@ object OwnTVAvatars {
 
 @Composable
 fun OwnTVAvatar(avatarId: Int, modifier: Modifier = Modifier) {
+    // Phase 7 — avatarId -1 = "no avatar" → show the Rank 1 ProfileIcon as a default silhouette.
+    if (avatarId == -1) {
+        ProfileIcon(color = Color(0xFF54F2E2), modifier = modifier.padding(4.dp))
+        return
+    }
     val i = ((avatarId % OwnTVAvatars.COUNT) + OwnTVAvatars.COUNT) % OwnTVAvatars.COUNT
     Canvas(modifier = modifier) { drawAvatar(i) }
 }

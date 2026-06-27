@@ -39,6 +39,8 @@ import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.PosterCard
 import tv.own.owntv.ui.components.SearchBar
+import tv.own.owntv.ui.components.ContentPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
@@ -65,7 +67,7 @@ fun SearchScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .roundedPanel(fillColor = ContentPanelFill)
             .onFocusChanged { if (it.hasFocus) onChildFocused() }
             .padding(horizontal = Dimens.ScreenPaddingH, vertical = Dimens.ScreenPaddingV),
     ) {

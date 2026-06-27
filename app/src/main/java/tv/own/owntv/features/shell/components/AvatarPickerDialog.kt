@@ -28,7 +28,9 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVAvatar
+import tv.own.owntv.ui.components.ProfileIcon
 import tv.own.owntv.ui.components.OwnTVAvatars
+import tv.own.owntv.ui.components.longPressMenuGuard
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /** Full-screen avatar picker: a grid of the preset cartoon avatars. Picking one applies & closes. */
@@ -46,6 +48,10 @@ fun AvatarPickerDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.65f))
+            // Opened by a long-press of OK — without this guard the still-held release would instantly
+            // confirm the focused avatar (the "auto-selects first, no pause" bug). longPressMenuGuard
+            // swallows OK/Enter until the key is released once, so the user navigates + OK to pick.
+            .longPressMenuGuard()
             .focusGroup(),
         contentAlignment = Alignment.Center,
     ) {
@@ -64,6 +70,26 @@ fun AvatarPickerDialog(
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(20.dp))
+
+            // Phase 7 — "no avatar" option showing the Rank 1 ProfileIcon (ID -1)
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                val noneSelected = selectedId == -1
+                FocusableSurface(
+                    onClick = { onSelect(-1); onDismiss() },
+                    modifier = (if (noneSelected) Modifier.focusRequester(selectedFocus) else Modifier)
+                        .size(88.dp),
+                    selected = noneSelected,
+                    shape = RoundedCornerShape(22.dp),
+                    focusedScale = 1.08f,
+                    focusedContainerColor = colors.surfaceContainerHighest,
+                    unfocusedContainerColor = colors.surfaceContainer,
+                    selectedContainerColor = colors.primaryContainer,
+                    contentAlignment = Alignment.Center,
+                ) { _ ->
+                    ProfileIcon(color = OwnTVTheme.colors.primary, modifier = Modifier.size(40.dp))
+                }
+            }
+            Spacer(Modifier.height(14.dp))
 
             val ids = (0 until OwnTVAvatars.COUNT).toList()
             ids.chunked(4).forEach { rowIds ->

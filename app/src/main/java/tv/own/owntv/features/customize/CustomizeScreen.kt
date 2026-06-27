@@ -44,6 +44,7 @@ import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.TextInputDialog
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /**
@@ -70,7 +71,7 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .roundedPanel()
             // Spatial D-pad entry from the sidebar would land mid-list — route it to the first chip.
             // onEnter fires only for directional entry from outside (internal moves don't re-trigger it).
             .focusProperties { onEnter = { runCatching { firstFocus.requestFocus() } } }

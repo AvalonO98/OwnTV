@@ -62,6 +62,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -77,6 +78,8 @@ import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.OwnTVSpinner
 import tv.own.owntv.ui.components.PosterCard
+import tv.own.owntv.ui.components.ContentPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 import androidx.tv.material3.MaterialTheme
@@ -158,6 +161,15 @@ fun HomeScreen(
         }
     }
 
+    // Cold-start "structure first": Home's queries are indexed and profile-scoped, but their first reads
+    // still come off cold eMMC before the OS page cache warms — so there's a brief gap between the shell
+    // painting and `home-data` arriving. During it we render the skeleton (instant) rather than flashing the
+    // empty state, which would look wrong (and momentarily disappear) for a user who actually has history.
+    // isLoading is true only for the initial state; it flips false on the first load and never goes back.
+    if (state.isLoading) {
+        HomeSkeleton(modifier = modifier.fillMaxSize())
+        return
+    }
     if (state.isEmpty) {
         EmptyHomeState(
             modifier = modifier.fillMaxSize(),
@@ -179,7 +191,7 @@ fun HomeScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(OwnTVTheme.colors.surface)
+            .roundedPanel(fillColor = ContentPanelFill)
             .onFocusChanged { if (it.hasFocus) onChildFocused() }
             .focusGroup(),
         state = listState,
@@ -966,6 +978,71 @@ private fun EmptyHomeState(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+/**
+ * Instant structure painted while Home's data loads on a cold start (see [HomeViewModel.HomeUiState.isLoading]).
+ * Static placeholders only — no shimmer/animation, on purpose: this is a low-end-TV first paint, where an
+ * animating skeleton would just compete with the cold DB reads for the same weak CPU/GPU we're trying to
+ * unblock. Spacing/shape reuse the real rows' Dimens so the skeleton→content hand-off doesn't visibly jump.
+ */
+@Composable
+private fun HomeSkeleton(modifier: Modifier = Modifier) {
+    val colors = OwnTVTheme.colors
+    Column(
+        modifier = modifier
+            .background(colors.surface)
+            .padding(vertical = Dimens.ScreenPaddingV),
+        verticalArrangement = Arrangement.spacedBy(Dimens.GapLarge),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Dimens.HomeRowPaddingH)
+                .aspectRatio(21f / 9f)
+                .clip(RoundedCornerShape(Dimens.HeroCardCorner))
+                .background(colors.surfaceContainerLowest),
+        )
+        SkeletonRowPlaceholder(cardCount = 6, cardWidth = 150.dp, cardHeight = 220.dp)
+        SkeletonRowPlaceholder(cardCount = 6, cardWidth = 180.dp, cardHeight = 100.dp)
+    }
+}
+
+@Composable
+private fun SkeletonRowPlaceholder(
+    cardCount: Int,
+    cardWidth: Dp,
+    cardHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val placeholder = OwnTVTheme.colors.surfaceContainerLowest
+    Column(modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .padding(start = Dimens.HomeRowPaddingH)
+                .width(150.dp)
+                .height(14.dp)
+                .clip(RoundedCornerShape(100))
+                .background(placeholder),
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Dimens.HomeRowPaddingH),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            repeat(cardCount) {
+                Box(
+                    modifier = Modifier
+                        .width(cardWidth)
+                        .height(cardHeight)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(placeholder),
+                )
+            }
         }
     }
 }

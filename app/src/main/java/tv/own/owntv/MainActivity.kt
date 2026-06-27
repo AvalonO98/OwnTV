@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -92,6 +93,7 @@ class MainActivity : ComponentActivity() {
             val avatarId by viewModel.avatarId.collectAsStateWithLifecycle()
             val profileName by viewModel.profileName.collectAsStateWithLifecycle()
             val sourceSummary by viewModel.sourceSummary.collectAsStateWithLifecycle()
+            val weather by viewModel.weather.collectAsStateWithLifecycle()
             val selectedSection by viewModel.selectedSection.collectAsStateWithLifecycle()
             val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
             val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
@@ -106,6 +108,14 @@ class MainActivity : ComponentActivity() {
             var everHadProfiles by remember { mutableStateOf(false) }
             LaunchedEffect(profiles) { if (profiles.isNotEmpty()) everHadProfiles = true }
             val shouldShowProfileGate = profiles.size > 1 || profiles.singleOrNull()?.pinHash != null
+            // Set by the sidebar's profile-avatar single-click so the "Who's watching?" gate opens even for
+            // a single unpinned profile — otherwise switch-profile is a silent no-op with just one profile.
+            var switchProfileRequested by remember { mutableStateOf(false) }
+            // Back from a user-requested switch returns to the shell (the cold-start gate exits the app).
+            BackHandler(enabled = switchProfileRequested && !gatePassed && !addingProfile) {
+                switchProfileRequested = false
+                gatePassed = true
+            }
 
             // "Refresh on startup" — re-sync sources once the active profile is known.
             LaunchedEffect(activeProfileId) {
@@ -138,9 +148,11 @@ class MainActivity : ComponentActivity() {
                             // Profiles still loading (≥0 means at least one exists) — avoid a gate/shell flicker.
                             profiles.isEmpty() && !everHadProfiles -> Unit
                             // Run 2+ (or a single locked profile): "Who's watching?" — choose a profile or add one.
-                            shouldShowProfileGate && !gatePassed -> ProfileGate(
-                                onEnter = { gatePassed = true },
-                                onAddProfile = { addingProfile = true },
+                            // Also opens when the sidebar avatar is single-clicked (switchProfileRequested),
+                            // which is the only way to switch when there's a single unpinned profile.
+                            (shouldShowProfileGate || switchProfileRequested) && !gatePassed -> ProfileGate(
+                                onEnter = { gatePassed = true; switchProfileRequested = false },
+                                onAddProfile = { addingProfile = true; switchProfileRequested = false },
                                 modifier = Modifier.fillMaxSize(),
                             )
                             else -> OwnTVShell(
@@ -153,6 +165,7 @@ class MainActivity : ComponentActivity() {
                                 onSetAvatar = viewModel::setAvatar,
                                 profileName = profileName,
                                 sourceSummary = sourceSummary,
+                                weatherInfo = weather,
                                 activeProfileId = activeProfileId,
                                 pendingDeepLink = pendingDeepLink,
                                 onDeepLinkConsumed = { pendingDeepLink = null },
@@ -161,6 +174,9 @@ class MainActivity : ComponentActivity() {
                                 onSwitchProfile = {
                                     // Stop playback and return to the "Who's watching?" gate — no app restart.
                                     player.onAppBackgrounded(); player.discardBackgroundRestore(); previewEngine.stop(); previewEngine.discardBackgroundRestore(); heroPreviewEngine.stop(); gatePassed = false
+                                    // Force the gate open even with a single unpinned profile (cold-start gate would
+                                    // skip it). Clearing gatePassed above alone is a silent no-op in that case.
+                                    switchProfileRequested = true
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )

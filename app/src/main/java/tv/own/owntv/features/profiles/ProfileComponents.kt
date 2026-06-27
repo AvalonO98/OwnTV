@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,17 +46,29 @@ import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVTextField
 import tv.own.owntv.ui.theme.OwnTVTheme
 
-/** Modal scrim wrapper for the profile dialogs. */
+/** Modal scrim wrapper for the profile dialogs. Phase 7 — Popup(focusable=true) creates
+ *  a hard focus boundary on Android TV so D-pad stays inside the dialog. */
 @Composable
 internal fun ProfileScrim(onDismiss: () -> Unit, content: @Composable () -> Unit) {
     BackHandler { onDismiss() }
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.75f)),
-        contentAlignment = Alignment.Center,
+    Popup(
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
     ) {
-        Column(
-            modifier = Modifier.width(480.dp).clip(RoundedCornerShape(20.dp)).background(OwnTVTheme.colors.surfaceContainerHigh).padding(28.dp),
-        ) { content() }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.75f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(480.dp)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(OwnTVTheme.colors.surfaceContainerHigh)
+                    .padding(28.dp),
+            ) { content() }
+        }
     }
 }
 
@@ -109,7 +123,7 @@ internal fun ProfileEditorDialog(
 ) {
     val colors = OwnTVTheme.colors
     var name by remember { mutableStateOf(initial?.name ?: "") }
-    var avatarId by remember { mutableIntStateOf(initial?.avatarId ?: 0) }
+    var avatarId by remember { mutableIntStateOf(initial?.avatarId ?: -1) } // Phase 7 — new profiles default to no-avatar
     var isKids by remember { mutableStateOf(initial?.isKids ?: false) }
     var pin by remember { mutableStateOf("") }
     var removePin by remember { mutableStateOf(false) }
@@ -125,7 +139,7 @@ internal fun ProfileEditorDialog(
         Text("AVATAR", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items((0 until OwnTVAvatars.COUNT).toList()) { id ->
+            items((-1 until OwnTVAvatars.COUNT).toList()) { id -> // Phase 7 — includes "no avatar" (-1)
                 FocusableSurface(
                     onClick = { avatarId = id },
                     modifier = Modifier.size(60.dp),

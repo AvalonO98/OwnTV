@@ -44,6 +44,8 @@ import tv.own.owntv.core.model.DownloadStatus
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
+import tv.own.owntv.ui.components.ContentPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
@@ -77,7 +79,7 @@ fun DownloadsScreen(
     }
 
     Column(
-        modifier = modifier.fillMaxSize().background(colors.surface)
+        modifier = modifier.fillMaxSize().roundedPanel(fillColor = ContentPanelFill)
             // Route spatial D-pad entries to the first download row (entry from the sidebar would
             // otherwise land on whatever row is horizontally aligned). onEnter fires only for
             // directional entry from outside (internal moves don't re-trigger it).

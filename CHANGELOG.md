@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.0.0 — 2026-06-25
+## v4.0.0 — 2026-06-28
 
 Big release — the community‑feedback **UI upgrade** (3 phases; Phase 1's quick wins are the first two
 entries below) folded together with a large batch of new features, performance work and fixes.
@@ -27,14 +27,21 @@ entries below) folded together with a large batch of new features, performance w
   longer expand and collapse as you move the D‑pad, so the interface never jumps around. Live TV is now a
   stable grid: a slim **icon nav**, a **full‑label category column** (no more 2–3 letter abbreviations), the
   **channel list**, and a large **preview** — each a fixed size. The same fixed nav + category column apply
-  across **Movies, Series and the Guide**. The **profile avatar** stays pinned top‑left: **click it to switch
-  profiles**, long‑press to change your picture. The result also feels noticeably faster on lower‑end boxes.
-- **Redesigned navigation icons** — a fresh, **monochrome duotone** Material 3 icon set (Home, Live TV,
-  Movies, Series, Search, Downloads, Guide, Settings) that tints with your theme — muted when idle, your
-  accent when selected. Plus layout polish: a wider Live channel list, a slightly narrower category column,
-  cleaner single‑line search bars, **taller phone‑style posters** in the Movies/Series grids, a **portrait
-  poster in the detail pane** (Series now shows its poster too), and the detail‑pane action buttons stacked
-  so longer labels (e.g. "Resume") never get clipped.
+  across **Movies, Series and the Guide**. The result also feels noticeably faster on lower‑end boxes.
+- **Shell redesign — new sidebar, top bar, and rounded panels** (Phases 0–7) — the entire app shell has been
+  rebuilt with a fixed icon-only left rail: **brand logo** at the top, **nav items** vertically centered
+  (scrollable at high UI zoom), **profile avatar** pinned at the bottom (click = "Who's watching?" profile
+  switcher, even for a single profile; long-press = avatar picker with a new **"no avatar"** option showing a
+  silhouette). **Search moved out of the rail** into a new **top bar** that shows the active section name,
+  a Search pill on the left, and a **live clock**, **weather chip** (with Canvas weather symbols — sun, moon,
+  cloud, rain, snow, thunder — via Open-Meteo, free no-key API), and **playlist name** on the right. All
+  content now sits inside **rounded panels** (Option A "Clean + Premium"): the category rail, content grid,
+  and preview pane each get their own rounded box with 22dp corners and hairline borders, floating on a dark
+  `#040E0B` surface. Settings submenus share the same rounded look. **Theme** renamed from `AMOLED_DARK` →
+  `DARK` with a `#040E0B` charcoal default (no more pure black). **Neo Signal Duotone** nav icons
+  (Home, Live TV, Movies, Series, Downloads, Guide, Settings, plus a Profile fallback silhouette) drawn on
+  crisp 100-unit Canvas. **Top bar is uniform** — all 5 chips (section, search, clock, playlist, weather)
+  share identical height. Light mode fully supported with matching panel tints.
 - **Clear watch history** — Settings → Content → **Clear watch history** lets you wipe this profile's
   recently-watched / "continue watching" rows — **all of it, or just Live TV, Movies or Series** (with a
   Yes/No confirmation). Playlists, favorites and downloads are untouched.
@@ -82,6 +89,11 @@ entries below) folded together with a large batch of new features, performance w
 
 ### ⚡ Performance
 
+- **Movies & Series open instantly** — the grids are now **pre-warmed at startup** (like the Guide), and the
+  query planner's table stats are refreshed after every playlist sync. A bulk sync does `REPLACE` on 100k+
+  rows which invalidates SQLite's stats and made the planner ignore the existing `(sourceId, name)` /
+  `(categoryId, name)` composite indices — so the grid fell back to a full-table sort on cold open (the 2–3s
+  delay). Stats are now re-analyzed post-sync and at launch so the indices stay chosen. (Mirrors the EPG fix.)
 - **The Guide opens instantly** — the guide is now **pre-loaded in the background at startup**, so even the
   first open is immediate, and re-opening no longer flashes a loading spinner or rebuilds from scratch — it
   shows your channel list right away and refreshes silently.
@@ -131,9 +143,43 @@ entries below) folded together with a large batch of new features, performance w
 - **No sound when opening a channel very fast** — pressing OK on a channel a split-second before its preview
   loaded could carry the muted-preview state into full-screen, so the channel played silently. Full-screen
   now always plays with sound.
+- **One corrupted file no longer breaks all playback** — a malformed MP4 (broken UDTA metadata pointing to
+  a multi-GB offset) sends FFmpeg's demuxer into a 3+ GB HTTP seek that blocks mpv's core thread. Previously
+  this poisoned every subsequent video (even healthy ones wouldn't play until app restart). Now the video
+  watchdog detects the stuck demuxer (no `FILE_LOADED` after 7s) and **destroys+recreates the mpv instance
+  entirely** (the only way to abort a blocked HTTP read), showing a clear error for the bad file while every
+  other video continues to play fine.
 - **Audio/video drift on some movies** — a few high-bitrate / high-frame-rate movies could play with the
   picture slightly behind the sound, because nothing was dropping the late frames on the direct hardware
   path. The player now drops late frames at the decoder so audio and video stay in sync.
+- **Long-press to favourite in Movies and Series** — long-press OK on any movie or series poster (grid or
+  list view) to toggle it as a favourite. Same as the details-pane button, just faster — no need to focus
+  into the details pane first. The existing star indicator still shows the current state.
+- **Sync no longer wipes data on failure** — old channels/movies/series are only cleared when the first new
+  row is actually written, not at the start. If a sync fails completely (wrong password, network down,
+  timeout), your existing content stays intact instead of vanishing. The Add Source screen now also
+  remembers what you typed so a typo doesn't mean re-typing everything from scratch on the remote.
+- **Sync times out fast instead of spinning forever** — OkHttp connect/read/write timeouts are now 15/20/20s
+  (down from 30/60/30s) and silent auto-retries are disabled. When the network drops mid-sync, the error
+  dialog appears in ~20s instead of hanging for minutes. Category-by-category fallback also aborts on
+  network errors (continues only for HTTP errors like 512) instead of retrying every category against a
+  dead server.
+- **M3U VOD entries now route to Movies** — M3U playlists with `type="vod"` or `tvg-type="movie"` entries
+  now create movie/stream rows in the Movie grid instead of being incorrectly filed under Live TV. The
+  `group-title` becomes the movie category (e.g. "Movies", "Peliculas").
+- **Offline banner now works on all devices** — Android TV boxes whose Ethernet interface stays "up"
+  forever (never fires network callbacks) now get a 20-second connectivity poll, so the banner actually
+  appears when the internet is unreachable.
+- **Profile dialog focus no longer escapes** — the edit/create profile popup now uses a `Popup` window
+  with `focusable=true` so D-pad stays inside the dialog instead of wandering out to the sidebar.
+- **Two-stage video watchdog** — broken files caught faster and more accurately: **Stage 1** (T_OPEN, 10s)
+  catches a demuxer that never opens the file; **Stage 2** (T_DECODE, 7s) catches a decoder that opened
+  the file but never produced a frame. **Moov-at-end detection** catches MP4s with trailing headers
+  from servers without Range support (shows a clear error instead of retrying endlessly); **`END_FILE`
+  instant-catch** aborts immediately when the demuxer rejects a malformed file outright. A **thrash
+  guard** (3 consecutive hard-resets) prevents infinite tear-down/recreate loops on bad playlists.
+  Added `seekable=1` to VOD demuxer options so FFmpeg attempts HTTP Range requests even on servers
+  that don't advertise byte-serving.
 
 ## v3.2.0 — 2026-06-22
 

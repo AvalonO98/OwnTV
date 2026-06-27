@@ -58,6 +58,8 @@ import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
+import tv.own.owntv.ui.components.ContentPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.components.StorageBrowser
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
@@ -174,7 +176,7 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .roundedPanel(fillColor = ContentPanelFill)
             // onEnter fires for ANY focus entry from outside the group: D-pad entry from the
             // sidebar, but ALSO our own programmatic dialog-close restores (the dialogs live
             // outside this group). So it must route to the pending dialog-return row first, then
@@ -465,7 +467,7 @@ fun SettingsScreen(
 }
 
 private fun themeLabel(mode: ThemeMode) = when (mode) {
-    ThemeMode.AMOLED_DARK -> "AMOLED Dark"
+    ThemeMode.DARK -> "Dark"
     ThemeMode.LIGHT -> "Light"
     ThemeMode.SYSTEM -> "System"
 }
@@ -749,7 +751,14 @@ private fun ZoomDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit
             )
             Spacer(Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                StepButton("–", enabled = current > UiZoom.MIN) { onSet(UiZoom.clamp(current - UiZoom.STEP)) }
+                // Initial focus lands on the DECREASE button: the dialog is most often opened to escape an
+                // over-zoomed screen (where everything's too big to navigate), so "–" must be first under
+                // the cursor. The buttons stay focusable at the limits (clamped + dimmed, never disabled)
+                // so focus always lands inside the dialog — a disabled "+" at MAX zoom was leaving focus
+                // stranded outside, trapping the user at high zoom.
+                StepButton("–", dimmed = current <= UiZoom.MIN, modifier = Modifier.focusRequester(firstFocus)) {
+                    onSet(UiZoom.clamp(current - UiZoom.STEP))
+                }
                 Text(
                     UiZoom.label(current),
                     style = MaterialTheme.typography.headlineLarge,
@@ -757,7 +766,9 @@ private fun ZoomDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit
                     modifier = Modifier.width(120.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
-                StepButton("+", enabled = current < UiZoom.MAX, modifier = Modifier.focusRequester(firstFocus)) { onSet(UiZoom.clamp(current + UiZoom.STEP)) }
+                StepButton("+", dimmed = current >= UiZoom.MAX) {
+                    onSet(UiZoom.clamp(current + UiZoom.STEP))
+                }
             }
             Spacer(Modifier.height(24.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -842,7 +853,13 @@ private fun CatchupTimeDialog(
 }
 
 @Composable
-private fun StepButton(label: String, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun StepButton(
+    label: String,
+    enabled: Boolean = true,
+    dimmed: Boolean = false,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     val colors = OwnTVTheme.colors
     FocusableSurface(
         onClick = onClick,
@@ -851,7 +868,7 @@ private fun StepButton(label: String, enabled: Boolean, modifier: Modifier = Mod
         shape = RoundedCornerShape(18.dp),
         contentAlignment = Alignment.Center,
     ) { _ ->
-        Text(label, style = MaterialTheme.typography.headlineMedium, color = if (enabled) colors.onSurface else colors.outline)
+        Text(label, style = MaterialTheme.typography.headlineMedium, color = if (enabled && !dimmed) colors.onSurface else colors.outline)
     }
 }
 

@@ -60,6 +60,9 @@ import tv.own.owntv.ui.components.SearchBar
 import tv.own.owntv.ui.components.SortChip
 import tv.own.owntv.ui.components.TextInputDialog
 import tv.own.owntv.ui.components.formatCount
+import tv.own.owntv.ui.components.ContentPanelFill
+import tv.own.owntv.ui.components.PreviewPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
@@ -148,6 +151,7 @@ fun LiveScreen(
         modifier = modifier
             .fillMaxSize()
             .onFocusChanged { if (it.hasFocus) onChildFocused() },
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         CategoryRail(
             categories = railItems.map { RailCategory(it.abbr, it.title, it.icon) },
@@ -164,6 +168,7 @@ fun LiveScreen(
             modifier = Modifier
                 .width(Dimens.ChannelListWidth)
                 .fillMaxHeight()
+                .roundedPanel(fillColor = ContentPanelFill)
                 // Entering this pane (from the rail or the preview) must land on a channel row, never
                 // the search bar: prefer the last-focused channel, else the first row. onEnter fires
                 // only for directional entry from outside (internal moves don't re-trigger it).
@@ -240,7 +245,7 @@ fun LiveScreen(
         }
 
         // Layer 4 — preview pane
-        Box(modifier = Modifier.weight(1f).fillMaxSize().padding(Dimens.GapLarge)) {
+        Box(modifier = Modifier.weight(1f).fillMaxSize().roundedPanel(fillColor = PreviewPanelFill).padding(Dimens.GapLarge)) {
             LivePreviewPane(
                 channel = previewChannel,
                 nowNext = nowNext,
@@ -421,7 +426,8 @@ private fun LivePreviewPane(
     Column(
         // Scrollable so the action buttons are never clipped when the EPG (Now/Next/Later) makes the
         // pane taller than the screen — focusing a button brings it into view.
-        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(Dimens.CardCorner)).background(colors.panel)
+        // Outer preview Box carries the rounded panel (Phase 6); no clip/background here.
+        modifier = Modifier.fillMaxSize()
             .verticalScroll(rememberScrollState()).padding(Dimens.GapLarge),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

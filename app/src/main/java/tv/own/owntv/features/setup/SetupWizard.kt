@@ -99,6 +99,7 @@ fun Onboarding(firstRun: Boolean, onDone: () -> Unit, onCancel: () -> Unit, modi
                 onStartXtream = { name, server, user, pass, ua, epg, refresh -> vm.startXtream(name, server, user, pass, ua, epg, refresh); importOrigin = Step.ADD_SOURCE; step = Step.IMPORTING },
                 onStartM3u = { name, url, ua, epg, refresh -> vm.startM3u(name, url, ua, epg, refresh); importOrigin = Step.ADD_SOURCE; step = Step.IMPORTING },
                 onBack = { step = Step.ADD_CONTENT },
+                initial = vm.lastFailedSource, // pre-fill on retry after failed import
             )
             Step.IMPORTING -> ImportProgressScreen(
                 state = importState,
@@ -106,6 +107,7 @@ fun Onboarding(firstRun: Boolean, onDone: () -> Unit, onCancel: () -> Unit, modi
                 processed = progress?.processed ?: 0,
                 onContinue = { vm.finish(onDone) }, // playlist + its EPG synced (auto)
                 onRetry = { vm.reset(); step = importOrigin },
+                onBack = { step = importOrigin }, // edit credentials instead of retyping
             )
             Step.EXISTING -> ExistingSourcesScreen(
                 sources = existing,
@@ -301,6 +303,7 @@ private fun ImportProgressScreen(
     processed: Int,
     onContinue: () -> Unit,
     onRetry: () -> Unit,
+    onBack: () -> Unit = {},
 ) {
     val colors = OwnTVTheme.colors
     val fr = remember { FocusRequester() }
@@ -328,7 +331,10 @@ private fun ImportProgressScreen(
                 Spacer(Modifier.height(10.dp))
                 Text(state.message, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 520.dp))
                 Spacer(Modifier.height(28.dp))
-                OwnTVButton("Try Again", onClick = onRetry, modifier = Modifier.focusRequester(fr))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OwnTVButton("Back", onClick = onBack, style = OwnTVButtonStyle.SECONDARY)
+                    OwnTVButton("Try Again", onClick = onRetry, modifier = Modifier.focusRequester(fr))
+                }
             }
         }
     }

@@ -45,6 +45,7 @@ import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.OwnTVSpinner
 import tv.own.owntv.ui.components.OwnTVTextField
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /**
@@ -117,7 +118,7 @@ fun EpgSourcesScreen(onBack: () -> Unit, modifier: Modifier = Modifier, startOnA
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .roundedPanel()
             .focusProperties { onEnter = { runCatching { addFocus.requestFocus() } } }
             .focusGroup()
             .padding(horizontal = 40.dp, vertical = 28.dp),
@@ -218,15 +219,16 @@ internal fun EpgSourceForm(
     BackHandler { onCancel() }
 
     Column(
-        modifier = modifier.fillMaxSize().background(colors.surface).padding(horizontal = 40.dp, vertical = 28.dp),
+        modifier = modifier.fillMaxSize().roundedPanel().padding(horizontal = 40.dp, vertical = 28.dp),
     ) {
         Text(if (initial == null) "Add EPG source" else "Edit EPG source", style = MaterialTheme.typography.headlineLarge, color = colors.onSurface)
         Spacer(Modifier.height(20.dp))
         OwnTVTextField(name, { name = it }, label = "Name", placeholder = "e.g. UK Guide", modifier = Modifier.fillMaxWidth().widthIn(max = 680.dp).focusRequester(firstFocus))
         Spacer(Modifier.height(14.dp))
-        OwnTVTextField(url, { url = it }, label = "XMLTV URL", placeholder = "https://…/epg.xml(.gz)", modifier = Modifier.fillMaxWidth().widthIn(max = 680.dp))
+        val fillButtonFocus = remember { FocusRequester() }
+        OwnTVTextField(url, { url = it }, label = "XMLTV URL", placeholder = "https://…/epg.xml(.gz)", modifier = Modifier.fillMaxWidth().widthIn(max = 680.dp).focusProperties { down = fillButtonFocus })
         Spacer(Modifier.height(8.dp))
-        OwnTVButton("Fill from playlist", onClick = { showPlaylistPicker = true }, style = OwnTVButtonStyle.SECONDARY, icon = OwnTVIcon.PLAYLIST)
+        OwnTVButton("Fill from playlist", onClick = { showPlaylistPicker = true }, style = OwnTVButtonStyle.SECONDARY, icon = OwnTVIcon.PLAYLIST, modifier = Modifier.focusRequester(fillButtonFocus))
         Spacer(Modifier.height(14.dp))
         OwnTVTextField(ua, { ua = it }, label = "User-Agent (optional)", placeholder = "Leave blank for default", modifier = Modifier.fillMaxWidth().widthIn(max = 680.dp))
 
@@ -292,7 +294,7 @@ private fun PlaylistEpgPicker(
 
 @Composable
 private fun CenterStatus(modifier: Modifier, content: @Composable () -> Unit) {
-    Box(modifier.fillMaxSize().background(OwnTVTheme.colors.surface), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxSize().roundedPanel(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) { content() }
     }
 }

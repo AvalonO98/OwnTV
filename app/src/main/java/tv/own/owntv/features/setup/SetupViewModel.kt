@@ -68,6 +68,10 @@ class SetupViewModel(
     private val _state = MutableStateFlow<ImportState>(ImportState.Idle)
     val state: StateFlow<ImportState> = _state.asStateFlow()
 
+    /** Failed source preserved so AddSourceScreen pre-fills on retry — no re-typing on remote. */
+    var lastFailedSource: SourceEntity? = null
+        private set
+
     private val _progress = MutableStateFlow<ImportStage?>(null)
     val progress: StateFlow<ImportStage?> = _progress.asStateFlow()
 
@@ -126,13 +130,14 @@ class SetupViewModel(
                         // Just the playlist content — EPG is added separately (Settings → EPG sources).
                         val counts = importFinalizer.finalize(source)
                         runCatching { launcherIntegrationRepository.refreshProfile(profileId) }
+                        lastFailedSource = null
                         _state.value = ImportState.Success(counts.summary(includeEpg = false))
                         if (epgRepository.guideUrl(source) != null) {
                             pendingEpgSource = source
                             _epgSync.value = tv.own.owntv.features.settings.EpgSyncUi.Ask(source.name)
                         }
                     }
-                    is SyncResult.Failed -> _state.value = ImportState.Failed(friendlySyncError(result.message, connectivity.isOnlineNow()))
+                    is SyncResult.Failed -> { lastFailedSource = source; _state.value = ImportState.Failed(friendlySyncError(result.message, connectivity.isOnlineNow())) }
                     SyncResult.Cancelled -> _state.value = ImportState.Idle
                 }
             } catch (c: CancellationException) {

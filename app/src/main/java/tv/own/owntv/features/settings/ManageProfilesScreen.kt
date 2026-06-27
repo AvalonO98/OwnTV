@@ -44,6 +44,7 @@ import tv.own.owntv.ui.components.OwnTVAvatar
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /** Phase 13 — create / edit / delete viewer profiles. */
@@ -69,7 +70,7 @@ fun ManageProfilesScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(colors.surface)
+            .roundedPanel()
             // Spatial D-pad entry from the sidebar would land mid-list — route it to "Add Profile".
             // onEnter fires only for directional entry from outside (internal moves don't re-trigger it).
             .focusProperties { onEnter = { runCatching { addFocus.requestFocus() } } }

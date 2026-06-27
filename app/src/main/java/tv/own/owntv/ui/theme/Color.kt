@@ -6,14 +6,15 @@ import androidx.compose.ui.graphics.Color
  * Material 3 tonal palette for OwnTV (teal-seeded). NEUTRAL + secondary/tertiary roles are
  * theme-only; the `primary` roles are seeded per [AccentColor] (default teal == these values).
  *
- * Dark keeps a true-AMOLED black [DarkBackground] behind the M3 tonal surface containers.
+ * Dark uses a near-black background (#040e0b) so the panel colours (Phase 6) pop against
+ * the deep dark surface while keeping a subtle green undertone.
  */
 
 // Brand mark color (the OwnTV play logo) — constant.
 val AccentCyan = Color(0xFF52DBC8)
 
-// ---------------- DARK (M3 dark over AMOLED black) ----------------
-val DarkBackground = Color(0xFF000000)               // AMOLED root
+// ---------------- DARK (M3 dark over near-black #040e0b) ----------------
+val DarkBackground = Color(0xFF040E0B) // Option A — nav + inter-panel gap surface
 val DarkSurface = Color(0xFF0E1513)
 val DarkSurfaceContainerLowest = Color(0xFF090F0E)
 val DarkSurfaceContainerLow = Color(0xFF161D1B)

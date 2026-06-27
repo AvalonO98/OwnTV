@@ -526,6 +526,10 @@ class EpgViewModel(
                     epgDao.programmesInWindow(ids, nowAligned, windowEnd).groupBy { it.epgChannelId }
                 }
                 forward.forEach { (k, list) -> rowCache[k] = list }
+                // Signal GuideChannelRow's produceState to re-read rowCache now that the batch load
+                // is complete — without this, the initial composition renders channels with empty
+                // programmes until the user scrolls and triggers fresh item composition.
+                _cacheRevision.value++
             }
 
             val hasEpg = epgIds.isNotEmpty()

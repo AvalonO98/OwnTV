@@ -64,6 +64,9 @@ import androidx.compose.foundation.layout.width
 import tv.own.owntv.ui.components.SearchBar
 import tv.own.owntv.ui.components.SortChip
 import tv.own.owntv.ui.components.formatCount
+import tv.own.owntv.ui.components.ContentPanelFill
+import tv.own.owntv.ui.components.PreviewPanelFill
+import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
@@ -123,7 +126,7 @@ fun MoviesScreen(
         onRestored()
     }
 
-    Row(modifier = modifier.fillMaxSize().onFocusChanged { if (it.hasFocus) onChildFocused() }) {
+    Row(modifier = modifier.fillMaxSize().onFocusChanged { if (it.hasFocus) onChildFocused() }, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         CategoryRail(
             categories = railItems.map { RailCategory(it.abbr, it.title, it.icon) },
             selectedIndex = selectedIndex,
@@ -134,6 +137,7 @@ fun MoviesScreen(
             modifier = Modifier
                 .weight(1.8f)
                 .fillMaxSize()
+                .roundedPanel(fillColor = ContentPanelFill)
                 // Entering this pane must land on a poster, never the search bar: prefer the
                 // last-focused movie, else the first one. onEnter fires only for directional entry
                 // from outside (internal moves don't re-trigger it).
@@ -201,6 +205,7 @@ fun MoviesScreen(
                                 },
                                 onFocus = { vm.onMovieFocused(movie) },
                                 onClick = { startMovie(movie) },
+                                onLongClick = { vm.toggleFavorite(movie) },
                             )
                         }
                     }
@@ -227,6 +232,7 @@ fun MoviesScreen(
                                 },
                                 onFocus = { vm.onMovieFocused(movie) },
                                 onClick = { startMovie(movie) },
+                                onLongClick = { vm.toggleFavorite(movie) },
                             )
                         }
                     }
@@ -234,7 +240,7 @@ fun MoviesScreen(
             }
         }
 
-        Box(modifier = Modifier.weight(1f).fillMaxSize().padding(Dimens.GapLarge)) {
+        Box(modifier = Modifier.weight(1f).fillMaxSize().roundedPanel(fillColor = PreviewPanelFill).padding(Dimens.GapLarge)) {
             MovieDetailsPane(
                 movie = selectedMovie,
                 isFavorite = selectedMovie?.let { favoriteIds.contains(it.id) } ?: false,
@@ -273,11 +279,10 @@ private fun MovieDetailsPane(
         PreviewPane(hint = "Focus a movie to see details.")
         return
     }
+    // Outer details Box carries the rounded panel (Phase 6); no clip/background here.
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(Dimens.CardCorner))
-            .background(colors.panel)
             .verticalScroll(rememberScrollState())
             .padding(Dimens.GapLarge),
     ) {
@@ -368,11 +373,13 @@ private fun MovieListRow(
     isFavorite: Boolean,
     onFocus: () -> Unit,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = OwnTVTheme.colors
     FocusableSurface(
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         contentAlignment = Alignment.CenterStart,
