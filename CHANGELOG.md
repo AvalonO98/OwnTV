@@ -10,6 +10,15 @@ entries below) folded together with a large batch of new features, performance w
 > again) and resync. Old cached EPG data is incompatible with the new loader — a fresh import fixes it. 
 > This is a one-time fix after upgrading.
 
+### 🐛 Fixes
+
+- **Show/Hide password toggle on all password fields** — a **Show / Hide** button now appears on the
+  right of every password field (Xtream password when adding/editing a playlist; PIN fields in profile
+  setup and profile settings). The toggle is D-pad focusable independently of the text field, so the
+  password can be revealed and re-hidden without opening the keyboard. Previously there was no way to
+  see the password you had typed on either the first-run setup screen or the Settings → Playlists edit
+  screen.
+
 ### ✨ New features
 
 - **Manually reorder channels, movies and series** — long-press any item in a **category folder** or **Favorites**

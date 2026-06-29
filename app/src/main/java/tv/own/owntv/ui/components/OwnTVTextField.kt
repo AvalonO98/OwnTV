@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -49,6 +51,9 @@ import tv.own.owntv.ui.theme.OwnTVTheme
  * **OK** to start editing (the keyboard appears); **Back** or the IME's Done returns to the field
  * without leaving the form. This mirrors the search bars and fixes the "keyboard pops up on every
  * field and traps you" problem on Fire TV / Android TV.
+ *
+ * When [isPassword] is true, a show/hide eye button appears on the right of the field and is
+ * independently D-pad focusable so the user can reveal the password without a keyboard.
  */
 @Composable
 fun OwnTVTextField(
@@ -71,6 +76,10 @@ fun OwnTVTextField(
     val shape = RoundedCornerShape(12.dp)
     val focused = fieldFocused || editing
 
+    var showPassword by remember { mutableStateOf(false) }
+    val eyeInteraction = remember { MutableInteractionSource() }
+    val eyeFocused by eyeInteraction.collectIsFocusedAsState()
+
     LaunchedEffect(editing) {
         if (editing) runCatching { innerFocus.requestFocus(); keyboard?.show() }
     }
@@ -78,58 +87,83 @@ fun OwnTVTextField(
     Column(modifier = modifier) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
         Spacer(Modifier.height(6.dp))
-        Box(
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp)
                 .clip(shape)
                 .background(colors.surfaceContainerHigh)
                 .border(
-                    width = if (focused) 2.5.dp else 1.dp,
-                    color = if (focused) colors.primary else colors.outlineVariant,
+                    width = if (focused || eyeFocused) 2.5.dp else 1.dp,
+                    color = if (focused || eyeFocused) colors.primary else colors.outlineVariant,
                     shape = shape,
-                )
-                // The outer node takes D-pad focus (so the form can be traversed without the IME);
-                // a passed-in requester focuses the field, not the inner editor.
-                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-                .focusRequester(pillFocus)
-                .clickable(interactionSource = interaction, indication = null) { editing = true },
+                ),
         ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp)
-                    .focusRequester(innerFocus)
-                    .focusProperties { canFocus = editing } // not D-pad reachable until OK opens it
-                    .onFocusChanged { if (editing && !it.isFocused) editing = false }
-                    .onPreviewKeyEvent {
-                        if (it.key == Key.Back) {
-                            if (it.type == KeyEventType.KeyUp) {
-                                editing = false
-                                runCatching { pillFocus.requestFocus() }
+                    .weight(1f)
+                    .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+                    .focusRequester(pillFocus)
+                    .clickable(interactionSource = interaction, indication = null) { editing = true },
+            ) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                        .focusRequester(innerFocus)
+                        .focusProperties { canFocus = editing }
+                        .onFocusChanged { if (editing && !it.isFocused) editing = false }
+                        .onPreviewKeyEvent {
+                            if (it.key == Key.Back) {
+                                if (it.type == KeyEventType.KeyUp) {
+                                    editing = false
+                                    runCatching { pillFocus.requestFocus() }
+                                }
+                                true
+                            } else {
+                                false
                             }
-                            true
-                        } else {
-                            false
+                        },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
+                    singleLine = true,
+                    cursorBrush = SolidColor(colors.primary),
+                    keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { editing = false; runCatching { pillFocus.requestFocus() } }),
+                    visualTransformation = if (isPassword && !showPassword) PasswordVisualTransformation() else VisualTransformation.None,
+                    decorationBox = { inner ->
+                        Box(Modifier.fillMaxWidth()) {
+                            if (value.isEmpty()) {
+                                Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
+                            }
+                            inner()
                         }
                     },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
-                singleLine = true,
-                cursorBrush = SolidColor(colors.primary),
-                keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { editing = false; runCatching { pillFocus.requestFocus() } }),
-                visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
-                decorationBox = { inner ->
-                    Box(Modifier.fillMaxWidth()) {
-                        if (value.isEmpty()) {
-                            Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = colors.onSurfaceVariant)
-                        }
-                        inner()
-                    }
-                },
-            )
+                )
+            }
+
+            if (isPassword) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .clickable(interactionSource = eyeInteraction, indication = null) { showPassword = !showPassword }
+                        .onPreviewKeyEvent {
+                            if (it.key == Key.DirectionCenter && it.type == KeyEventType.KeyUp) {
+                                showPassword = !showPassword
+                                true
+                            } else false
+                        },
+                ) {
+                    Text(
+                        text = if (showPassword) "Hide" else "Show",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (eyeFocused) colors.primary else colors.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
 }
