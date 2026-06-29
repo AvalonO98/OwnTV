@@ -5,6 +5,11 @@
 Big release — the community‑feedback **UI upgrade** (3 phases; Phase 1's quick wins are the first two
 entries below) folded together with a large batch of new features, performance work and fixes.
 
+> ⚠️ **Upgrade note for EPG users:** v4.0.0 redesigned EPG loading. If the Guide shows blank on first open 
+> or after re-entry, **delete your EPG sources and re-add them** (Settings → EPG → Edit → delete, then add 
+> again) and resync. Old cached EPG data is incompatible with the new loader — a fresh import fixes it. 
+> This is a one-time fix after upgrading.
+
 ### ✨ New features
 
 - **Manually reorder channels, movies and series** — long-press any item in a **category folder** or **Favorites**
@@ -210,6 +215,12 @@ entries below) folded together with a large batch of new features, performance w
   guard** (3 consecutive hard-resets) prevents infinite tear-down/recreate loops on bad playlists.
   Added `seekable=1` to VOD demuxer options so FFmpeg attempts HTTP Range requests even on servers
   that don't advertise byte-serving.
+- **Guide shows programmes on first open** — the EPG guide was blank until you navigated into a row (on large 
+  catch-up windows with a lookback), because the auto-scroll-to-now fired before the timeline layout was ready. 
+  The scroll now waits for layout, so programmes appear immediately. **Note:** if upgrading to v4.0.0 and the 
+  guide remains blank after this fix, **delete the EPG sources and re-add them** (Settings → EPG → Edit → delete, 
+  then add the feed again); v4.0.0's new batched EPG loader is incompatible with old cached data, and a fresh 
+  re-import ensures compatibility. Resync only after re-adding.
 
 ## v3.2.0 — 2026-06-22
 

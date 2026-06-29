@@ -150,7 +150,7 @@ Bring up the controls in any full‑screen player (press OK / a direction). The 
 - **Long‑press OK** is your friend — favourites, rename, hide, match EPG and catch‑up all live there.
 - A channel buffering or showing artifacts on 4K? **Gear button → compatibility mode** usually fixes it.
 - Audio out of sync on a VOD? **Audio → A/V sync** and nudge ± until lips match.
-- Guide feels empty? Add an **EPG Source** (Settings) and sync — it's separate from your playlist.
+- **Guide looks blank when you first open it?** (especially with catch‑up channels) Try: **Settings → EPG** → tap Edit → delete your EPG source(s), then **add them again** and sync fresh. The v4.0.0 update changed how EPG loads, and old cached data needs to be cleared and reimported. Once done, the guide displays immediately.
 
 ---
 

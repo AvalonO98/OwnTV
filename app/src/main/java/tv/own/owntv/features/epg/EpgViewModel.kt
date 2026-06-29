@@ -190,6 +190,13 @@ class EpgViewModel(
     private val _canZap = MutableStateFlow(false)
     val canZap: StateFlow<Boolean> = _canZap.asStateFlow()
 
+    /** Record that this channel was tuned from the guide, so focus returns to its row on Back.
+     *  Call this before delegating playback to liveVm, so lastTunedChannelId is set correctly. */
+    fun noteChannelTuned(channel: ChannelEntity) {
+        lastTunedChannelId = channel.id
+        _canZap.value = _state.value.channels.size > 1
+    }
+
     /** Tune to a channel from the guide (fullscreen playback + history, like the Live list). */
     fun play(channel: ChannelEntity) {
         lastTunedChannelId = channel.id

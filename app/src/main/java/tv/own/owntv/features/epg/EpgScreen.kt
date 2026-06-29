@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -102,6 +103,7 @@ fun EpgScreen(
     onAddEpg: () -> Unit = {},
     restoreFocus: Boolean = false,
     onRestored: () -> Unit = {},
+    onPlayChannel: ((channel: ChannelEntity, channels: List<ChannelEntity>) -> Unit)? = null,
 ) {
     val vm: EpgViewModel = koinViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
@@ -170,6 +172,12 @@ fun EpgScreen(
         val minutesBack = ((state.now - state.windowStart) / 60_000L).toInt()
         if (minutesBack <= SLOT_MIN) return@LaunchedEffect // no real lookback → leave at the start
         val px = with(density) { (minutesBack * PX_PER_MIN.value).dp.toPx() }.toInt()
+        // Wait until the time-axis row is laid out so maxValue is known — otherwise scrollTo runs before
+        // layout and clamps to 0 (a no-op), leaving the strips at the past edge (no data yet) → blank guide
+        // until a later real scroll. Bounded so we never hang if the row stays unscrollable.
+        kotlinx.coroutines.withTimeoutOrNull(2000) {
+            androidx.compose.runtime.snapshotFlow { hScroll.maxValue }.first { it > 0 }
+        }
         runCatching { hScroll.scrollTo(px) }
     }
 
@@ -333,7 +341,7 @@ fun EpgScreen(
                                 index == 0 -> firstCell
                                 else -> null
                             },
-                            onTune = { vm.play(channel); onFullscreen() },
+                            onTune = { vm.noteChannelTuned(channel); if (onPlayChannel != null) onPlayChannel(channel, state.channels) else { vm.play(channel); onFullscreen() } },
                             onOpen = { restoreChannelId = channel.id; detail = channel to it },
                             onMatchEpg = { restoreChannelId = channel.id; matchChooser = channel },
                             inCellMode = inCellMode,
@@ -353,7 +361,7 @@ fun EpgScreen(
             channelName = channel.name,
             programme = p,
             canCatchup = vm.canCatchup(channel, p, state.now),
-            onWatch = { detail = null; vm.play(channel); onFullscreen() },
+            onWatch = { detail = null; vm.noteChannelTuned(channel); if (onPlayChannel != null) onPlayChannel(channel, state.channels) else { vm.play(channel); onFullscreen() } },
             onPlayCatchup = { detail = null; vm.playCatchup(channel, p); onFullscreen() },
             onDismiss = { detail = null },
         )
@@ -674,8 +682,8 @@ private fun ProgrammeStripCanvas(
         }
     }
 
+    val scrollPx = hScroll.value.toFloat() // read in composable scope so Canvas redraws on scroll
     Canvas(Modifier.fillMaxSize()) {
-        val scrollPx = hScroll.value.toFloat()
         val viewW = size.width
         val h = size.height
         programmes.forEachIndexed { i, p ->
@@ -726,7 +734,7 @@ private fun ProgrammeDetailDialog(
             Text("${clock(programme.startMs)} – ${clock(programme.stopMs)}", style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
             if (!programme.description.isNullOrBlank()) {
                 Spacer(Modifier.height(14.dp))
-                Text(programme.description!!, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+                Text(programme.description.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
             }
             Spacer(Modifier.height(24.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {

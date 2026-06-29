@@ -377,6 +377,13 @@ fun OwnTVShell(
                         selectedSection == MainSection.EPG -> EpgScreen(
                             onBack = { runCatching { sidebarFocus.requestFocus() } },
                             onFullscreen = { openFullscreen() },
+                            onPlayChannel = { ch, list ->
+                                restoreFocus = false
+                                liveVm.watchFullscreen(ch, list)
+                                zapSource = MainSection.LIVE_TV
+                                homeVm.stopPreview()
+                                if (playerMode != PlayerMode.MINI) playerMode = PlayerMode.FULLSCREEN
+                            },
                             onAddEpg = { openEpgAdd = true; onSelectSection(MainSection.SETTINGS) },
                             restoreFocus = restoreFocus,
                             onRestored = { restoreFocus = false },
