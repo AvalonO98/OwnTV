@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -72,6 +73,7 @@ class MovieViewModel(
     private val downloadManager: DownloadManager,
     private val launcherIntegrationRepository: LauncherIntegrationRepository,
     private val contentOrderDao: ContentOrderDao,
+    private val metadata: tv.own.owntv.core.metadata.MetadataRepository,
 ) : ViewModel() {
 
     data class MovieMoveState(val items: List<MovieEntity>, val activeIndex: Int, val contextKey: String)
@@ -101,9 +103,13 @@ class MovieViewModel(
 
     fun toggleSort() {
         viewModelScope.launch {
+            // Cycle Provider → A–Z → Rating → Provider.
             settings.setSortMovies(
-                if (sortMode.value == SettingsRepository.SortMode.PLAYLIST) SettingsRepository.SortMode.ALPHA
-                else SettingsRepository.SortMode.PLAYLIST,
+                when (sortMode.value) {
+                    SettingsRepository.SortMode.PLAYLIST -> SettingsRepository.SortMode.ALPHA
+                    SettingsRepository.SortMode.ALPHA -> SettingsRepository.SortMode.RATING
+                    SettingsRepository.SortMode.RATING -> SettingsRepository.SortMode.PLAYLIST
+                },
             )
         }
     }
@@ -135,6 +141,29 @@ class MovieViewModel(
 
     private val _selectedMovie = MutableStateFlow<MovieEntity?>(null)
     val selectedMovie: StateFlow<MovieEntity?> = _selectedMovie.asStateFlow()
+
+    /**
+     * On-demand TMDB enrichment for the focused movie (plan §7.2: detail screens resolve lazily). Debounced
+     * so scrolling fast doesn't fire a lookup per card; cached in Room so a second focus is instant. Null
+     * when enrichment is off or no confident match — the UI then shows pure provider data (§7.1).
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val selectedMovieMeta: StateFlow<MovieMeta?> = _selectedMovie
+        .distinctUntilChanged { a, b -> a?.id == b?.id }
+        .debounce(350)
+        .mapLatest { m ->
+            if (m == null) null
+            else MovieMeta(m.id, runCatching { metadata.resolveMovie(m) }.getOrNull())
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** TMDB metadata tagged with the movie id it was resolved for, so the UI never shows stale meta on a
+     *  different card during the debounce window. [cache] is null while resolving or on no match. */
+    data class MovieMeta(val movieId: Long, val cache: tv.own.owntv.core.database.entity.MetadataCacheEntity?)
+
+    /** Source mode (plan §4.1) — the detail pane uses it to flip provider/TMDB field precedence. */
+    val metadataMode: StateFlow<tv.own.owntv.core.metadata.MetadataMode> = settings.metadataMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, tv.own.owntv.core.metadata.MetadataMode.PROVIDER_PLUS_TMDB)
 
     private var playingMovie: MovieEntity? = null
 
@@ -364,11 +393,18 @@ class MovieViewModel(
     private fun pagingSource(key: LiveKey, c: Ctx, query: String, sort: SettingsRepository.SortMode): PagingSource<Int, MovieEntity> {
         val ids = c.sourceIds.ifEmpty { listOf(-1L) }
         val playlist = sort == SettingsRepository.SortMode.PLAYLIST
+        val rating = sort == SettingsRepository.SortMode.RATING
         return if (query.isBlank()) when (key) {
-            LiveKey.All -> if (playlist) movieDao.pagingAllOriginal(ids) else movieDao.pagingAll(ids)
+            LiveKey.All -> when {
+                rating -> movieDao.pagingAllRating(ids)
+                playlist -> movieDao.pagingAllOriginal(ids)
+                else -> movieDao.pagingAll(ids)
+            }
             LiveKey.Favorites -> movieDao.pagingFavoritesManual(c.profileId, ContentOrderEntity.FAV_CONTEXT, ids)
             LiveKey.History -> movieDao.pagingHistory(c.profileId, ids)
-            is LiveKey.Folder -> movieDao.pagingByCategoryManual(key.id, c.profileId, folderContextKeys.value[key.id] ?: "")
+            is LiveKey.Folder ->
+                if (rating) movieDao.pagingByCategoryRating(key.id)
+                else movieDao.pagingByCategoryManual(key.id, c.profileId, folderContextKeys.value[key.id] ?: "")
         } else when (key) {
             LiveKey.All -> movieDao.searchAll(query, ids)
             LiveKey.Favorites -> movieDao.searchFavorites(query, c.profileId, ids)

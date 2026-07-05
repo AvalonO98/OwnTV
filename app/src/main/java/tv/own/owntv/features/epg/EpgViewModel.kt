@@ -535,7 +535,8 @@ class EpgViewModel(
                 val byProvider = compareBy<ChannelEntity>({ it.sourceId }, { it.sortOrder }, { it.name.lowercase() })
                 val liveOrdered = when (sortLiveMode) {
                     SettingsRepository.SortMode.ALPHA -> matched.sortedWith(byAlpha)
-                    SettingsRepository.SortMode.PLAYLIST -> matched.sortedWith(byProvider)
+                    // Live/EPG have no rating; RATING can't be selected there, so treat it as provider order.
+                    SettingsRepository.SortMode.PLAYLIST, SettingsRepository.SortMode.RATING -> matched.sortedWith(byProvider)
                 }
                 when (sortGuideMode) {
                     SettingsRepository.GuideSort.ALPHA -> matched.sortedWith(byAlpha)

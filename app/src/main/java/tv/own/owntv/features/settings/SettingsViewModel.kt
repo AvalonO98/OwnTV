@@ -60,6 +60,7 @@ class SettingsViewModel(
     private val launcherIntegrationRepository: LauncherIntegrationRepository,
     private val catalogSyncScheduler: CatalogSyncScheduler,
     private val okHttpClient: okhttp3.OkHttpClient,
+    private val metadataProvider: tv.own.owntv.core.metadata.MetadataProvider,
 ) : ViewModel() {
     companion object {
         private const val TAG = "OwnTVHome"
@@ -602,6 +603,65 @@ class SettingsViewModel(
             _proxyTest.value = result.fold(
                 onSuccess = { ProxyTestState.Ok(it) },
                 onFailure = { ProxyTestState.Fail(friendlyProxyError(it)) },
+            )
+        }
+    }
+
+    // --- TMDB metadata enrichment (plan §4) — Phase M1 config + manual "look up title" test ---
+
+    val metadataMode: StateFlow<tv.own.owntv.core.metadata.MetadataMode> =
+        settings.metadataMode.stateIn(viewModelScope, SharingStarted.Eagerly, tv.own.owntv.core.metadata.MetadataMode.PROVIDER_PLUS_TMDB)
+    fun setMetadataMode(mode: tv.own.owntv.core.metadata.MetadataMode) { viewModelScope.launch { settings.setMetadataMode(mode) } }
+
+    val tmdbApiKey: StateFlow<String> =
+        settings.tmdbApiKey.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+    fun setTmdbApiKey(key: String) { viewModelScope.launch { settings.setTmdbApiKey(key) } }
+
+    val metadataServerUrl: StateFlow<String> =
+        settings.metadataServerUrl.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+    fun setMetadataServerUrl(url: String) { viewModelScope.launch { settings.setMetadataServerUrl(url) } }
+
+    /** Which access tier the current config resolves to — shown as the Metadata screen's status chip. */
+    val metadataTier: StateFlow<tv.own.owntv.core.metadata.MetadataConfig.Tier> =
+        settings.metadataConfigFlow
+            .map { it.tier }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, tv.own.owntv.core.metadata.MetadataConfig.Tier.DEFAULT_WORKER)
+
+    sealed interface MetadataTestState {
+        data object Idle : MetadataTestState
+        data object Testing : MetadataTestState
+        /** Top match summary, e.g. "Oppenheimer (2023) · tmdb #872585". */
+        data class Ok(val summary: String) : MetadataTestState
+        data class Fail(val message: String) : MetadataTestState
+    }
+
+    private val _metadataTest = MutableStateFlow<MetadataTestState>(MetadataTestState.Idle)
+    val metadataTest: StateFlow<MetadataTestState> = _metadataTest.asStateFlow()
+
+    fun resetMetadataTest() { _metadataTest.value = MetadataTestState.Idle }
+
+    /** Manual "look up title" through the configured tier — proves the plumbing end-to-end (M1 deliverable). */
+    fun testMetadataLookup(title: String) {
+        if (_metadataTest.value == MetadataTestState.Testing) return
+        val q = title.trim()
+        if (q.isEmpty()) {
+            _metadataTest.value = MetadataTestState.Fail("Enter a title to look up.")
+            return
+        }
+        _metadataTest.value = MetadataTestState.Testing
+        viewModelScope.launch {
+            val result = runCatching { metadataProvider.searchMovie(q) }
+            _metadataTest.value = result.fold(
+                onSuccess = { hits ->
+                    val top = hits.firstOrNull()
+                    if (top == null) {
+                        MetadataTestState.Fail("No TMDB match for \"$q\".")
+                    } else {
+                        val yr = top.year?.let { " ($it)" } ?: ""
+                        MetadataTestState.Ok("${top.title}$yr · tmdb #${top.tmdbId}")
+                    }
+                },
+                onFailure = { MetadataTestState.Fail(it.message?.takeIf { m -> m.isNotBlank() } ?: "Lookup failed.") },
             )
         }
     }

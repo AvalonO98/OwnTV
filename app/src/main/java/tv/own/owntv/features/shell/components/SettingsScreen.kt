@@ -69,7 +69,7 @@ import tv.own.owntv.ui.theme.UiZoom
 
 private enum class TileTone { PRIMARY, SECONDARY, TERTIARY }
 
-private enum class SettingsTab { ROOT, SOURCES, EPG, PROFILES, BACKUP, VIDEO, CUSTOMIZE, NETWORK }
+private enum class SettingsTab { ROOT, SOURCES, EPG, PROFILES, BACKUP, VIDEO, CUSTOMIZE, NETWORK, METADATA }
 
 /**
  * The MD3 Settings screen (shown when [MainSection.SETTINGS] is active): grouped sections, each row
@@ -155,6 +155,7 @@ fun SettingsScreen(
         SettingsTab.VIDEO to FocusRequester(),
         SettingsTab.CUSTOMIZE to FocusRequester(),
         SettingsTab.NETWORK to FocusRequester(),
+        SettingsTab.METADATA to FocusRequester(),
     ) }
     val open: (SettingsTab) -> Unit = { lastTab = it; tab = it }
     LaunchedEffect(tab) {
@@ -175,6 +176,7 @@ fun SettingsScreen(
         SettingsTab.VIDEO -> { VideoPlayerSettingsScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
         SettingsTab.CUSTOMIZE -> { CustomizeScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
         SettingsTab.NETWORK -> { tv.own.owntv.features.settings.NetworkSettingsScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
+        SettingsTab.METADATA -> { tv.own.owntv.features.settings.MetadataSettingsScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
         SettingsTab.ROOT -> Unit
     }
 
@@ -224,6 +226,12 @@ fun SettingsScreen(
             title = "Customize Category", desc = "Hide, rename & reorder categories",
             onClick = { open(SettingsTab.CUSTOMIZE) }, showChevron = true,
             modifier = Modifier.focusRequester(rowFocus.getValue(SettingsTab.CUSTOMIZE)),
+        )
+        SettingsRow(
+            tone = TileTone.PRIMARY, icon = OwnTVIcon.VIDEO,
+            title = "Metadata (TMDB)", desc = "Posters, plots, cast & ratings for Movies and Series",
+            onClick = { open(SettingsTab.METADATA) }, showChevron = true,
+            modifier = Modifier.focusRequester(rowFocus.getValue(SettingsTab.METADATA)),
         )
         SettingsRow(
             tone = TileTone.SECONDARY, icon = OwnTVIcon.PERSON,

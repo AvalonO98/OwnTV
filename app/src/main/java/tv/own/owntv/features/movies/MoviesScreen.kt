@@ -56,6 +56,7 @@ import tv.own.owntv.core.model.DownloadStatus
 import tv.own.owntv.features.live.LiveKey
 import tv.own.owntv.features.settings.data.SettingsRepository
 import tv.own.owntv.features.shell.components.CategoryRail
+import tv.own.owntv.features.shell.components.MediaDetailsScreen
 import tv.own.owntv.features.shell.components.PreviewPane
 import tv.own.owntv.features.shell.components.RailCategory
 import tv.own.owntv.ui.components.MoveOrderOverlay
@@ -94,8 +95,13 @@ fun MoviesScreen(
     val sortMode by vm.sortMode.collectAsStateWithLifecycle()
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
     val selectedMovie by vm.selectedMovie.collectAsStateWithLifecycle()
+    val selectedMovieMeta by vm.selectedMovieMeta.collectAsStateWithLifecycle()
+    val metadataMode by vm.metadataMode.collectAsStateWithLifecycle()
     val moveState by vm.moveState.collectAsStateWithLifecycle()
     var contextMovie by remember { mutableStateOf<MovieEntity?>(null) }
+    // Fullscreen TMDB details window (§11.1); null = closed.
+    var detailsMovie by remember { mutableStateOf<MovieEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     // Id + list position of the movie the context menu was opened on. The id re-focuses the same item
     // when it survives (Favourite/Download/Cancel); when the item is REMOVED (Remove from history, or
     // un-Favourite while on the Favorites category), it's gone from the paged list, so we re-focus the
@@ -149,6 +155,9 @@ fun MoviesScreen(
     //     category is now empty do we let focus leave (there's nothing here to land on).
     LaunchedEffect(contextMovie) {
         if (contextMovie != null) return@LaunchedEffect
+        // Opening the TMDB Details window closes the menu; don't yank focus back to the grid — the window
+        // needs it (and traps it). The grid is refocused when the window closes (see below).
+        if (detailsMovie != null) return@LaunchedEffect
         val targetId = contextMovieId
         if (targetId == null) { contextMovieIndex = -1; return@LaunchedEffect }
         val items = movies.itemSnapshotList.items
@@ -307,13 +316,8 @@ fun MoviesScreen(
         Box(modifier = Modifier.weight(1f).fillMaxSize().roundedPanel(fillColor = PreviewPanelFill).padding(Dimens.GapLarge)) {
             MovieDetailsPane(
                 movie = selectedMovie,
-                isFavorite = selectedMovie?.let { favoriteIds.contains(it.id) } ?: false,
-                // In "Never resume" the button should honestly say Play, not Resume.
-                resumePositionMs = if (resumeMode == SettingsRepository.ResumeMode.NEVER) 0L else selectedProgress?.positionMs ?: 0L,
-                download = selectedMovie?.let { downloadStates[it.id] },
-                onPlay = { selectedMovie?.let { startMovie(it) } },
-                onToggleFavorite = { selectedMovie?.let { vm.toggleFavorite(it) } },
-                onDownload = { selectedMovie?.let { vm.download(it) } },
+                meta = selectedMovieMeta?.takeIf { it.movieId == selectedMovie?.id }?.cache,
+                tmdbWins = metadataMode.tmdbWins,
             )
         }
     }
@@ -329,16 +333,45 @@ fun MoviesScreen(
 
     // Long-press a movie → context menu.
     contextMovie?.let { m ->
+        val alreadyDownloaded = downloadStates[m.id] != null
+        // TMDB Details is shown only when enrichment is on AND a confident match resolved for THIS movie.
+        val cacheForM = selectedMovieMeta?.takeIf { it.movieId == m.id }?.cache
         MovieContextMenu(
             title = m.name,
             isFavorite = favoriteIds.contains(m.id),
             canMove = selectedKey is LiveKey.Folder || selectedKey == LiveKey.Favorites,
             isHistory = selectedKey == LiveKey.History,
+            hasTmdbDetails = metadataMode.enrich && cacheForM != null,
+            onShowDetails = { contextMovie = null; detailsMovie = m },
             onToggleFavorite = { vm.toggleFavorite(m); contextMovie = null },
             onMove = { contextMovie = null; vm.enterMoveMode(m, selectedKey) },
             onRemoveFromHistory = { vm.removeFromHistory(m.id); contextMovie = null },
-            onDownload = { vm.download(m); contextMovie = null },
+            onDownload = {
+                contextMovie = null
+                // Idempotent (§11.1): don't re-queue an existing download — nudge to the Downloads menu.
+                if (alreadyDownloaded) {
+                    android.widget.Toast.makeText(context, "Already downloaded — check the Downloads menu.", android.widget.Toast.LENGTH_SHORT).show()
+                } else vm.download(m)
+            },
             onDismiss = { contextMovie = null },
+        )
+    }
+
+    // When the TMDB Details window closes, return focus to the movie it was opened from (the window
+    // trapped focus, so without this it would fall to the sidebar).
+    LaunchedEffect(detailsMovie) {
+        if (detailsMovie == null && contextMovieId != null) {
+            withFrameNanos { }
+            runCatching { contextFocus.requestFocus() }
+        }
+    }
+
+    // Windowed TMDB details popup (§11.1) — read-only, Back exits.
+    detailsMovie?.let { m ->
+        val cache = selectedMovieMeta?.takeIf { it.movieId == m.id }?.cache
+        MediaDetailsScreen(
+            details = buildMovieDetails(m, cache, metadataMode.tmdbWins),
+            onExit = { detailsMovie = null },
         )
     }
 
@@ -362,6 +395,8 @@ private fun MovieContextMenu(
     isFavorite: Boolean,
     canMove: Boolean,
     isHistory: Boolean,
+    hasTmdbDetails: Boolean,
+    onShowDetails: () -> Unit,
     onToggleFavorite: () -> Unit,
     onMove: () -> Unit,
     onRemoveFromHistory: () -> Unit,
@@ -391,6 +426,11 @@ private fun MovieContextMenu(
             if (canMove) OwnTVButton("Move", onClick = onMove, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
             if (isHistory) OwnTVButton("Remove from History", onClick = onRemoveFromHistory, style = OwnTVButtonStyle.SECONDARY, modifier = Modifier.fillMaxWidth())
             OwnTVButton("Download", onClick = onDownload, style = OwnTVButtonStyle.SECONDARY, icon = OwnTVIcon.DOWNLOADS, modifier = Modifier.fillMaxWidth())
+            // TMDB Details — only when a confident match resolved (§11.1).
+            if (hasTmdbDetails) {
+                Spacer(Modifier.height(4.dp))
+                OwnTVButton("TMDB Details", onClick = onShowDetails, style = OwnTVButtonStyle.SECONDARY, icon = OwnTVIcon.MENU, modifier = Modifier.fillMaxWidth())
+            }
             Spacer(Modifier.height(4.dp))
             OwnTVButton("Close", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
         }
@@ -400,18 +440,23 @@ private fun MovieContextMenu(
 @Composable
 private fun MovieDetailsPane(
     movie: MovieEntity?,
-    isFavorite: Boolean,
-    resumePositionMs: Long,
-    download: DownloadEntity?,
-    onPlay: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onDownload: () -> Unit,
+    meta: tv.own.owntv.core.database.entity.MetadataCacheEntity?,
+    tmdbWins: Boolean,
 ) {
     val colors = OwnTVTheme.colors
     if (movie == null) {
         PreviewPane(hint = "Focus a movie to see details.")
         return
     }
+    // Merge (§7.1 / §4.1). Provider+TMDB → provider wins (provider ?: tmdb); TMDB-only → tmdb wins
+    // (tmdb ?: provider). TMDB fields are never written back to the content row.
+    val providerPoster = movie.posterUrl?.takeIf { it.isNotBlank() }
+    val tmdbPoster = tv.own.owntv.core.metadata.MetadataImages.poster(meta?.posterPath)
+    val posterArt = (if (tmdbWins) tmdbPoster ?: providerPoster else providerPoster ?: tmdbPoster)
+        ?: movie.backdropUrl?.takeIf { it.isNotBlank() }
+        ?: tv.own.owntv.core.metadata.MetadataImages.backdrop(meta?.backdropPath)
+    val providerPlot = movie.plot?.takeIf { it.isNotBlank() }
+    val plot = if (tmdbWins) meta?.overview ?: providerPlot else providerPlot ?: meta?.overview
     // Outer details Box carries the rounded panel (Phase 6); no clip/background here.
     Column(
         modifier = Modifier
@@ -425,10 +470,9 @@ private fun MovieDetailsPane(
                 modifier = Modifier.fillMaxHeight().aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainerLowest),
                 contentAlignment = Alignment.Center,
             ) {
-                val art = movie.posterUrl ?: movie.backdropUrl
-                if (!art.isNullOrBlank()) {
+                if (!posterArt.isNullOrBlank()) {
                     AsyncImage(
-                        model = art,
+                        model = posterArt,
                         contentDescription = null,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
@@ -441,62 +485,82 @@ private fun MovieDetailsPane(
         Spacer(Modifier.height(14.dp))
         Text(movie.name, style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
         Spacer(Modifier.height(6.dp))
-        Text(metaLine(movie), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-        val plot = movie.plot
+        Text(metaLine(movie, meta, tmdbWins), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+        // Genres & cast are TMDB-only (§7.1) — a whole layer the provider never had.
+        val genres = jsonList(meta?.genresJson)
+        if (genres.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text(genres.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = colors.primary)
+        }
         if (!plot.isNullOrBlank()) {
             Spacer(Modifier.height(12.dp))
             Text(plot, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant, maxLines = 6)
         }
-        Spacer(Modifier.height(20.dp))
-        // Stacked (one per row): the narrow detail pane can't fit Resume + Favorite side by side without
-        // clipping the longer labels, so lay them out vertically and stretch each pill to the pane width.
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            OwnTVButton(
-                label = if (resumePositionMs > 0) "Resume" else "Play",
-                onClick = onPlay,
-                icon = OwnTVIcon.PLAY,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OwnTVButton(
-                label = if (isFavorite) "Favorited" else "Favorite",
-                onClick = onToggleFavorite,
-                style = OwnTVButtonStyle.SECONDARY,
-                icon = OwnTVIcon.STAR,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OwnTVButton(
-                label = downloadLabel(download),
-                onClick = onDownload,
-                style = OwnTVButtonStyle.SECONDARY,
-                icon = OwnTVIcon.DOWNLOADS,
-                enabled = download == null || download.status == DownloadStatus.FAILED,
-                modifier = Modifier.fillMaxWidth(),
-            )
+        val cast = jsonList(meta?.castJson)
+        if (cast.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text("Cast", style = MaterialTheme.typography.labelMedium, color = colors.onSurface)
+            Spacer(Modifier.height(2.dp))
+            Text(cast.take(6).joinToString(", "), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 2)
         }
+        Spacer(Modifier.height(20.dp))
+        // Display-only pane (§11.1): actions live on the poster — OK plays, long-press opens the menu
+        // (Favorite / Download / TMDB Details). Keeping the pane non-focusable fixes grid→pane navigation.
+        Text(
+            "OK to play  ·  long-press for options",
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.onSurfaceVariant,
+        )
     }
 }
 
-private fun downloadLabel(d: DownloadEntity?): String = when (d?.status) {
-    DownloadStatus.COMPLETED -> "Downloaded"
-    DownloadStatus.FAILED -> "Retry download"
-    DownloadStatus.QUEUED -> "Queued…"
-    DownloadStatus.RUNNING, DownloadStatus.PAUSED -> {
-        val pct = if (d.totalBytes > 0) (d.downloadedBytes * 100 / d.totalBytes).toInt() else 0
-        "Downloading $pct%"
-    }
-    null -> "Download"
-}
-
-private fun metaLine(movie: MovieEntity): String {
+private fun metaLine(movie: MovieEntity, meta: tv.own.owntv.core.database.entity.MetadataCacheEntity? = null, tmdbWins: Boolean = false): String {
     val parts = mutableListOf<String>()
-    movie.year?.let { parts.add(it.toString()) }
-    movie.rating?.takeIf { it > 0 }?.let { parts.add("★ %.1f".format(it)) }
+    // §7.1 / §4.1: precedence flips with the source mode.
+    val year = if (tmdbWins) meta?.year ?: movie.year else movie.year ?: meta?.year
+    val rating = if (tmdbWins) meta?.rating?.takeIf { it > 0 } ?: movie.rating?.takeIf { it > 0 }
+        else movie.rating?.takeIf { it > 0 } ?: meta?.rating?.takeIf { it > 0 }
+    year?.let { parts.add(it.toString()) }
+    rating?.let { parts.add("★ %.1f".format(it)) }
     movie.durationSecs?.takeIf { it > 0 }?.let { secs ->
         val h = secs / 3600
         val m = (secs % 3600) / 60
         parts.add(if (h > 0) "${h}h ${m}m" else "${m}m")
     }
     return parts.joinToString("  •  ")
+}
+
+/** Build the fullscreen TMDB-details payload for a movie, applying the §7.1/§4.1 merge precedence. */
+private fun buildMovieDetails(
+    movie: MovieEntity,
+    meta: tv.own.owntv.core.database.entity.MetadataCacheEntity?,
+    tmdbWins: Boolean,
+): tv.own.owntv.features.shell.components.MediaDetailsUi {
+    val providerPoster = movie.posterUrl?.takeIf { it.isNotBlank() }
+    val tmdbPoster = tv.own.owntv.core.metadata.MetadataImages.poster(meta?.posterPath)
+    val poster = if (tmdbWins) tmdbPoster ?: providerPoster else providerPoster ?: tmdbPoster
+    // Backdrop is TMDB-only (providers don't carry one); fall back to the provider's if it exists.
+    val backdrop = tv.own.owntv.core.metadata.MetadataImages.backdrop(meta?.backdropPath)
+        ?: movie.backdropUrl?.takeIf { it.isNotBlank() }
+    val plot = if (tmdbWins) meta?.overview ?: movie.plot else movie.plot?.takeIf { it.isNotBlank() } ?: meta?.overview
+    return tv.own.owntv.features.shell.components.MediaDetailsUi(
+        title = movie.name,
+        backdropUrl = backdrop,
+        posterUrl = poster,
+        metaLine = metaLine(movie, meta, tmdbWins),
+        genres = jsonList(meta?.genresJson),
+        plot = plot,
+        cast = jsonList(meta?.castJson),
+    )
+}
+
+/** Parse a stored JSON array of strings (genres/cast) back to a list; empty on null/blank/bad JSON. */
+private fun jsonList(json: String?): List<String> {
+    if (json.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val arr = org.json.JSONArray(json)
+        (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
+    }.getOrDefault(emptyList())
 }
 
 /** Compact one-line row used by the List view mode — fits many titles on screen at once (#10). */
