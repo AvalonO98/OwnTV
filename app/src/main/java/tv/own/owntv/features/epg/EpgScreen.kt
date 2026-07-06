@@ -81,7 +81,7 @@ import tv.own.owntv.ui.components.trapVerticalFocusExit
 import tv.own.owntv.features.epg.GuideGridDefaults
 import tv.own.owntv.features.epg.ProgrammeDetailDialog
 import tv.own.owntv.features.epg.ProgrammeStripCanvas
-import tv.own.owntv.features.epg.clock
+import tv.own.owntv.ui.format.rememberSystemTimeFormatter
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 import java.text.SimpleDateFormat
@@ -312,6 +312,7 @@ fun EpgScreen(
             }
             else -> {
                 // Time axis (shares hScroll with the rows below).
+                val formatTime = rememberSystemTimeFormatter()
                 val slots = ((state.windowEnd - state.windowStart) / (GuideGridDefaults.SlotMin * 60_000L)).toInt()
                 Row {
                     Spacer(Modifier.width(GuideGridDefaults.ChannelCol))
@@ -319,7 +320,7 @@ fun EpgScreen(
                         for (i in 0 until slots) {
                             val slotMs = state.windowStart + i * GuideGridDefaults.SlotMin * 60_000L
                             Text(
-                                clock(slotMs),
+                                formatTime(slotMs),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = colors.onSurfaceVariant,
                                 fontWeight = FontWeight.SemiBold,

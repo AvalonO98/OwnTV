@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tv.own.owntv.features.home.HeroKind
 import tv.own.owntv.features.home.HomeConfig
+import tv.own.owntv.features.home.HomeLiveRowMode
 import tv.own.owntv.features.home.HomeRow
 import tv.own.owntv.features.settings.data.SettingsRepository
 
@@ -69,6 +70,16 @@ class HomeSettingsViewModel(
                 HeroKind.LIVE -> config.copy(heroIncludeLive = included)
                 HeroKind.MOVIES -> config.copy(heroIncludeMovies = included)
                 HeroKind.SERIES -> config.copy(heroIncludeSeries = included)
+            }
+        }
+    }
+
+    fun setLiveRowMode(row: HomeRow, mode: HomeLiveRowMode) {
+        updateConfig { config ->
+            when (row) {
+                HomeRow.RECENT_CHANNELS -> config.copy(recentLiveMode = mode)
+                HomeRow.FAVORITE_CHANNELS -> config.copy(favoriteLiveMode = mode)
+                else -> config
             }
         }
     }

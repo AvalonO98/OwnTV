@@ -30,7 +30,7 @@ val appModule = module {
     viewModel { ShellViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { HomeViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { SetupViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
-    viewModel { LiveViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { LiveViewModel(androidContext(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { MovieViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { SeriesViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { SearchViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }

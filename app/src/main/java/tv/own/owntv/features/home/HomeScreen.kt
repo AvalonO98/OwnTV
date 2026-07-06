@@ -85,15 +85,13 @@ import tv.own.owntv.ui.components.OwnTVSpinner
 import tv.own.owntv.ui.components.PosterCard
 import tv.own.owntv.ui.components.ContentPanelFill
 import tv.own.owntv.ui.components.roundedPanel
+import tv.own.owntv.ui.format.formatSystemTime
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.compose.foundation.layout.widthIn
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 @Composable
 fun HomeScreen(
@@ -171,7 +169,7 @@ fun HomeScreen(
         onDispose { heroPreviewEngine.stop() }
     }
 
-    LaunchedEffect(orderedRows, state.heroItems, state.recentLive, state.favoriteLive, state.continueMovies, state.continueSeries, state.guideSlice, restoreFocus) {
+    LaunchedEffect(orderedRows, state.heroItems, state.recentLive, state.favoriteLive, state.recentGuide, state.favoriteGuide, state.continueMovies, state.continueSeries, restoreFocus) {
         if (orderedRows.isEmpty()) {
             if (restoreFocus) onRestored()
             return@LaunchedEffect
@@ -274,22 +272,28 @@ fun HomeScreen(
                 }
 
                 HomeRow.RECENT_CHANNELS -> if (state.recentLive.isNotEmpty()) {
-                    ChannelRailRow(
+                    HomeLiveRow(
                         title = row.title,
+                        mode = state.config.recentLiveMode,
                         channels = state.recentLive,
-                        onChannelClick = { id -> onPlayChannel(id, state.recentLive) },
+                        guide = state.recentGuide,
+                        onChannelClick = onPlayChannel,
                         onFocus = onNonHeroFocused,
                         firstItemFocusRequester = if (row == firstDataRow) firstRowFocus else null,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
 
                 HomeRow.FAVORITE_CHANNELS -> if (state.favoriteLive.isNotEmpty()) {
-                    ChannelRailRow(
+                    HomeLiveRow(
                         title = row.title,
+                        mode = state.config.favoriteLiveMode,
                         channels = state.favoriteLive,
-                        onChannelClick = { id -> onPlayChannel(id, state.favoriteLive) },
+                        guide = state.favoriteGuide,
+                        onChannelClick = onPlayChannel,
                         onFocus = onNonHeroFocused,
                         firstItemFocusRequester = if (row == firstDataRow) firstRowFocus else null,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
 
@@ -310,18 +314,6 @@ fun HomeScreen(
                         onItemClick = { onPlayEpisode(0L, it.targetItemId, it.positionMs) },
                         onFocus = onNonHeroFocused,
                         firstItemFocusRequester = if (row == firstDataRow) firstRowFocus else null,
-                    )
-                }
-
-                HomeRow.GUIDE_SLICE -> if (state.guideSlice.hasContent) {
-                    HomeGuideSlice(
-                        slice = state.guideSlice,
-                        onTuneChannel = { ch -> onPlayChannel(ch.id, state.guideSlice.channels) },
-                        onOpenFullGuide = onOpenGuide,
-                        onFocus = onNonHeroFocused,
-                        firstItemFocusRequester = if (row == firstDataRow) firstRowFocus else null,
-                        loadDescription = vm::programmeDescription,
-                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
@@ -352,11 +344,16 @@ fun HomeScreen(
 
 private fun rowHasData(row: HomeRow, state: HomeUiState): Boolean = when (row) {
     HomeRow.HERO -> state.heroItems.isNotEmpty()
-    HomeRow.RECENT_CHANNELS -> state.recentLive.isNotEmpty()
-    HomeRow.FAVORITE_CHANNELS -> state.favoriteLive.isNotEmpty()
+    HomeRow.RECENT_CHANNELS -> when (state.config.recentLiveMode) {
+        HomeLiveRowMode.CARDS -> state.recentLive.isNotEmpty()
+        HomeLiveRowMode.ON_NOW -> state.recentGuide.hasContent
+    }
+    HomeRow.FAVORITE_CHANNELS -> when (state.config.favoriteLiveMode) {
+        HomeLiveRowMode.CARDS -> state.favoriteLive.isNotEmpty()
+        HomeLiveRowMode.ON_NOW -> state.favoriteGuide.hasContent
+    }
     HomeRow.CONTINUE_MOVIES -> state.continueMovies.isNotEmpty()
     HomeRow.CONTINUE_SERIES -> state.continueSeries.isNotEmpty()
-    HomeRow.GUIDE_SLICE -> state.guideSlice.hasContent
 }
 
 private fun rowCanRender(row: HomeRow, state: HomeUiState, showHeroFallback: Boolean): Boolean =
@@ -541,12 +538,30 @@ private fun HeroRowSection(
                                 // blur underneath just costs frames on TV hardware.
                                 Box(Modifier.fillMaxSize().background(Color.Black)) {
                                     if (!imageUrl.isNullOrBlank()) {
-                                        AsyncImage(
-                                            model = imageUrl,
-                                            contentDescription = null,
-                                            contentScale = ContentScale.Fit,
-                                            modifier = Modifier.fillMaxSize(),
-                                        )
+                                        if (item is HeroItem.LiveHero) {
+                                            AsyncImage(
+                                                model = imageUrl,
+                                                contentDescription = null,
+                                                modifier = Modifier.fillMaxSize().blur(20.dp),
+                                                contentScale = ContentScale.Crop,
+                                                alpha = 0.5f,
+                                            )
+                                            AsyncImage(
+                                                model = imageUrl,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Fit,
+                                                modifier = Modifier
+                                                    .align(Alignment.Center)
+                                                    .size(80.dp),
+                                            )
+                                        } else {
+                                            AsyncImage(
+                                                model = imageUrl,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Fit,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        }
                                     } else {
                                         Box(
                                             Modifier.fillMaxSize(),
@@ -680,19 +695,35 @@ private fun HeroRowSection(
                                     is HeroItem.LiveHero -> expandedItem.channel.logoUrl
                                 }
                                 if (!artUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = artUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize().blur(20.dp),
-                                        contentScale = ContentScale.Crop,
-                                        alpha = 0.5f,
-                                    )
-                                    AsyncImage(
-                                        model = artUrl,
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Fit,
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
+                                    if (expandedItem is HeroItem.LiveHero) {
+                                        AsyncImage(
+                                            model = artUrl,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize().blur(20.dp),
+                                            contentScale = ContentScale.Crop,
+                                            alpha = 0.5f,
+                                        )
+                                        AsyncImage(
+                                            model = artUrl,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.size(80.dp),
+                                        )
+                                    } else {
+                                        AsyncImage(
+                                            model = artUrl,
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize().blur(20.dp),
+                                            contentScale = ContentScale.Crop,
+                                            alpha = 0.5f,
+                                        )
+                                        AsyncImage(
+                                            model = artUrl,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    }
                                 } else {
                                     val fallback = when (expandedItem) {
                                         is HeroItem.MovieHero -> OwnTVIcon.MOVIES
@@ -831,8 +862,7 @@ private fun finishByLabel(context: Context, positionMs: Long, durationMs: Long, 
     if (remainingMs <= 0L) return null
 
     val finishMs = roundUpToNextQuarterHour(nowMs + remainingMs)
-    val pattern = if (android.text.format.DateFormat.is24HourFormat(context)) "H:mm" else "h:mm a"
-    val time = SimpleDateFormat(pattern, Locale.getDefault()).format(Date(finishMs))
+    val time = formatSystemTime(context, finishMs)
     return "Finish by $time"
 }
 
@@ -935,89 +965,6 @@ private fun ContinueWatchingRow(
                         onFocus = onFocus,
                         onClick = { onItemClick(item) },
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChannelRailRow(
-    title: String,
-    channels: List<ChannelEntity>,
-    onChannelClick: (Long) -> Unit,
-    onFocus: () -> Unit,
-    firstItemFocusRequester: FocusRequester? = null,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Text(
-            text = title.uppercase(),
-            style = MaterialTheme.typography.titleSmall,
-            color = OwnTVTheme.colors.primary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = Dimens.HomeRowPaddingH),
-        )
-        Spacer(Modifier.height(10.dp))
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(horizontal = Dimens.HomeRowPaddingH),
-            modifier = Modifier.focusGroup(),
-        ) {
-            itemsIndexed(channels, key = { _, channel -> channel.id }) { index, channel ->
-                Box(
-                    modifier = Modifier
-                        .width(180.dp)
-                        .height(100.dp),
-                ) {
-                    FocusableSurface(
-                        onClick = { onChannelClick(channel.id) },
-                        modifier = when {
-                            firstItemFocusRequester != null && index == 0 -> Modifier.focusRequester(firstItemFocusRequester)
-                            else -> Modifier
-                        }.onFocusChanged { if (it.hasFocus) onFocus() },
-                        shape = RoundedCornerShape(14.dp),
-                        focusedScale = 1f,
-                        focusedContainerColor = OwnTVTheme.colors.surfaceContainerHigh,
-                        unfocusedContainerColor = OwnTVTheme.colors.surfaceContainerHigh,
-                        selectedContainerColor = OwnTVTheme.colors.surfaceContainerHigh,
-                    ) { focused ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(OwnTVTheme.colors.surfaceContainerLowest),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (!channel.logoUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = channel.logoUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop,
-                                    )
-                                } else {
-                                    OwnTVIcon(OwnTVIcon.LIVE_TV, tint = OwnTVTheme.colors.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                                }
-                            }
-                            Text(
-                                text = channel.name,
-                                style = MaterialTheme.typography.titleSmall,
-                                color = if (focused) OwnTVTheme.colors.primary else OwnTVTheme.colors.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
                 }
             }
         }

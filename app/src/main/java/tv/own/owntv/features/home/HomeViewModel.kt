@@ -97,7 +97,8 @@ data class HomeUiState(
     val recentLive: List<ChannelEntity> = emptyList(),
     val favoriteLive: List<ChannelEntity> = emptyList(),
     val config: HomeConfig = HomeConfig(),
-    val guideSlice: GuideSliceState = GuideSliceState(),
+    val recentGuide: GuideSliceState = GuideSliceState(),
+    val favoriteGuide: GuideSliceState = GuideSliceState(),
     /**
      * True until the first [HomeViewModel.loadHomeData] completes. Home's queries are profile-scoped and
      * already indexed, but on a cold boot their first reads come off slow eMMC (pages not yet in the OS
@@ -117,13 +118,12 @@ data class GuideSliceState(
     val now: Long = 0L,
 ) {
     val hasContent: Boolean
-        get() = channels.isNotEmpty() && programmes.values.any { it.isNotEmpty() }
+        get() = channels.isNotEmpty()
 }
 
-private const val SLICE_WINDOW_MS = 150 * 60_000L
-private const val RECENT_LIVE_LIMIT = 10
-private const val GUIDE_SLICE_CANDIDATE_LIMIT = 50
-private const val GUIDE_SLICE_CHANNEL_LIMIT = 5
+private const val SLICE_WINDOW_MS = 360 * 60_000L
+private const val LIVE_ROW_CHANNEL_LIMIT = 20
+private const val LIVE_ROW_EPG_LIMIT = 10
 
 class HomeViewModel(
     private val planner: LauncherRecommendationPlanner,
@@ -199,17 +199,21 @@ class HomeViewModel(
                 .filterNot { isContinuationHidden(it, hidden) }
             val movies = items.filter { it.kind == LauncherContinuationKind.MOVIE }
             val series = items.filter { it.kind == LauncherContinuationKind.EPISODE }
-            val liveWithTs = recentlyWatchedLive(profileId, activeIds, filtering, RECENT_LIVE_LIMIT)
+            val liveWithTs = recentlyWatchedLive(profileId, activeIds, filtering, LIVE_ROW_CHANNEL_LIMIT)
                 .filterNot { isChannelHidden(it.channel, hidden) }
             val live = liveWithTs.map { it.channel }
             val favLive = channelDao.favoritesListAlpha(profileId, 50).first()
                 .let { if (!filtering) it else it.filter { c -> c.sourceId in activeIds } }
                 .filterNot { isChannelHidden(it, hidden) }
+                .take(LIVE_ROW_CHANNEL_LIMIT)
             val heroItems = buildHeroItems(items, liveWithTs, config)
-            val guideSlice = if (HomeRow.GUIDE_SLICE in config.visibleOrder) {
-                val guideCandidates = recentlyWatchedLive(profileId, activeIds, filtering, GUIDE_SLICE_CANDIDATE_LIMIT)
-                    .filterNot { isChannelHidden(it.channel, hidden) }
-                buildGuideSlice(profileId, activeIds, guideCandidates)
+            val recentGuide = if (HomeRow.RECENT_CHANNELS in config.visibleOrder && config.recentLiveMode == HomeLiveRowMode.ON_NOW) {
+                buildLiveGuide(profileId, activeIds, live)
+            } else {
+                GuideSliceState()
+            }
+            val favoriteGuide = if (HomeRow.FAVORITE_CHANNELS in config.visibleOrder && config.favoriteLiveMode == HomeLiveRowMode.ON_NOW) {
+                buildLiveGuide(profileId, activeIds, favLive)
             } else {
                 GuideSliceState()
             }
@@ -222,7 +226,8 @@ class HomeViewModel(
                 recentLive = live,
                 favoriteLive = favLive,
                 config = config,
-                guideSlice = guideSlice,
+                recentGuide = recentGuide,
+                favoriteGuide = favoriteGuide,
                 isLoading = false,
             )
         }
@@ -345,25 +350,23 @@ class HomeViewModel(
             channelDao.recentlyWatchedWithTimestamp(profileId, limit).first()
         }
 
-    private suspend fun buildGuideSlice(
+    private suspend fun buildLiveGuide(
         profileId: Long,
         activeIds: Set<Long>,
-        liveWithTs: List<ChannelWithWatchedAt>,
+        candidates: List<ChannelEntity>,
     ): GuideSliceState = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val windowStart = floorToHalfHour(now)
         val windowEnd = windowStart + SLICE_WINDOW_MS
-        if (liveWithTs.isEmpty()) return@withContext GuideSliceState(now = now, windowStart = windowStart, windowEnd = windowEnd)
+        val channels = candidates.take(LIVE_ROW_CHANNEL_LIMIT)
+        if (channels.isEmpty()) return@withContext GuideSliceState(now = now, windowStart = windowStart, windowEnd = windowEnd)
 
         val epgIds = epgSourceStore.getAll().map { it.id }
         val sourceIds = (activeIds.toList() + epgIds).distinct()
         val customizations = customize.observe(profileId, tv.own.owntv.core.model.MediaType.LIVE).first()
-        val channels = mutableListOf<ChannelEntity>()
         val programmes = linkedMapOf<Long, List<EpgProgrammeEntity>>()
 
-        for (watched in liveWithTs) {
-            if (channels.size >= GUIDE_SLICE_CHANNEL_LIMIT) break
-            val channel = watched.channel
+        for (channel in channels.take(LIVE_ROW_EPG_LIMIT)) {
             val key = customizations.epgMatches[CustomizeKeys.channel(channel)]
                 ?: channel.epgChannelId
             val epgKey = key?.trim()?.lowercase().orEmpty()
@@ -371,7 +374,6 @@ class HomeViewModel(
 
             val rows = epgDao.programmeSummariesForChannel(sourceIds, epgKey, windowStart, windowEnd)
             if (rows.isNotEmpty()) {
-                channels += channel
                 programmes[channel.id] = rows
             }
         }
@@ -389,9 +391,6 @@ class HomeViewModel(
         val halfHourMs = 30 * 60_000L
         return ms / halfHourMs * halfHourMs
     }
-
-    suspend fun programmeDescription(programmeId: Long): String? =
-        runCatching { epgDao.programmeDescription(programmeId) }.getOrNull()
 
     private suspend fun currentProfileId(): Long? {
         val preferred = settings.activeProfileId.first()

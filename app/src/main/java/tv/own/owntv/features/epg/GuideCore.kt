@@ -39,14 +39,12 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import tv.own.owntv.core.database.entity.EpgProgrammeEntity
 import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
+import tv.own.owntv.ui.format.rememberSystemTimeFormatter
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
@@ -56,8 +54,6 @@ internal object GuideGridDefaults {
     val PxPerMin = 4.dp
     const val SlotMin = 30
 }
-
-internal fun clock(ms: Long) = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ms))
 
 @Composable
 internal fun ProgrammeStripCanvas(
@@ -82,10 +78,11 @@ internal fun ProgrammeStripCanvas(
     val titleNowStyle = MaterialTheme.typography.titleSmall.copy(color = colors.onPrimaryContainer)
     val timeStyle = MaterialTheme.typography.labelSmall.copy(color = colors.onSurfaceVariant)
     val timeNowStyle = MaterialTheme.typography.labelSmall.copy(color = colors.onPrimaryContainer)
+    val formatTime = rememberSystemTimeFormatter()
     // Time labels built once (string formatting kept out of the per-frame draw loop).
-    val labels = remember(programmes, now) {
+    val labels = remember(programmes, now, formatTime) {
         programmes.map { p ->
-            val t = "${clock(p.startMs)} – ${clock(p.stopMs)}"
+            val t = "${formatTime(p.startMs)} – ${formatTime(p.stopMs)}"
             if (now in p.startMs until p.stopMs) "NOW · $t" else t
         }
     }
@@ -131,6 +128,7 @@ internal fun ProgrammeDetailDialog(
     onDismiss: () -> Unit,
 ) {
     val colors = OwnTVTheme.colors
+    val formatTime = rememberSystemTimeFormatter()
     // The grid load drops `description` to stay under the CursorWindow limit, so fetch it on demand
     // here (fall back to the row's own value when it was loaded by the lazy per-row path).
     val description by produceState(programme.description, programme.id) {
@@ -146,7 +144,7 @@ internal fun ProgrammeDetailDialog(
                 Spacer(Modifier.height(6.dp))
                 Text(programme.title, style = MaterialTheme.typography.headlineSmall, color = colors.onSurface)
                 Spacer(Modifier.height(8.dp))
-                Text("${clock(programme.startMs)} – ${clock(programme.stopMs)}", style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
+                Text("${formatTime(programme.startMs)} – ${formatTime(programme.stopMs)}", style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
                 if (!description.isNullOrBlank()) {
                     Spacer(Modifier.height(14.dp))
                     Text(description.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)

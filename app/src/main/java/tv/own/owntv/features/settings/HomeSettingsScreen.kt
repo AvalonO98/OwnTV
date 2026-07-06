@@ -33,6 +33,7 @@ import org.koin.androidx.compose.koinViewModel
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.own.owntv.features.home.HeroKind
+import tv.own.owntv.features.home.HomeLiveRowMode
 import tv.own.owntv.features.home.HomeRow
 import tv.own.owntv.features.settings.data.StartupMode
 import tv.own.owntv.ui.components.OwnTVButton
@@ -116,6 +117,12 @@ fun HomeSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     onMoveTop = { vm.moveToEdge(row, top = true) },
                     onMoveBottom = { vm.moveToEdge(row, top = false) },
                     onToggleHidden = { vm.setRowHidden(row, row !in config.hidden) },
+                    liveMode = when (row) {
+                        HomeRow.RECENT_CHANNELS -> config.recentLiveMode
+                        HomeRow.FAVORITE_CHANNELS -> config.favoriteLiveMode
+                        else -> null
+                    },
+                    onToggleLiveMode = { mode -> vm.setLiveRowMode(row, mode.toggled()) },
                     firstButtonModifier = if (index == 0) Modifier.focusRequester(firstFocus) else Modifier,
                 )
             }
@@ -236,6 +243,8 @@ private fun HomeRowCard(
     onMoveTop: () -> Unit,
     onMoveBottom: () -> Unit,
     onToggleHidden: () -> Unit,
+    liveMode: HomeLiveRowMode?,
+    onToggleLiveMode: (HomeLiveRowMode) -> Unit,
     firstButtonModifier: Modifier = Modifier,
 ) {
     val colors = OwnTVTheme.colors
@@ -265,6 +274,14 @@ private fun HomeRowCard(
             }
         }
         Spacer(Modifier.width(10.dp))
+        if (liveMode != null) {
+            OwnTVButton(
+                label = "Mode: ${liveMode.label}",
+                onClick = { onToggleLiveMode(liveMode) },
+                style = OwnTVButtonStyle.SECONDARY,
+            )
+            Spacer(Modifier.width(6.dp))
+        }
         OwnTVButton("⤒", onClick = onMoveTop, style = OwnTVButtonStyle.SECONDARY, enabled = canMoveUp)
         Spacer(Modifier.width(6.dp))
         OwnTVButton("↑", onClick = onMoveUp, style = OwnTVButtonStyle.SECONDARY, enabled = canMoveUp)
