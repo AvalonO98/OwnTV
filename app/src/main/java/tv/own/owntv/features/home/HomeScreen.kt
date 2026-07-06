@@ -352,10 +352,14 @@ private fun HeroRowSection(
     val heroRowState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(expandedIndex) {
+    LaunchedEffect(expandedIndex, items.size) {
         // The rect is only ever written by the expanded card's onGloballyPositioned; drop it on collapse
         // so the next expansion can't flash its overlay at the previous card's stale position.
-        if (expandedIndex < 0) previewRectInRowPx = null
+        if (expandedIndex < 0) {
+            previewRectInRowPx = null
+        } else if (expandedIndex < items.size) {
+            heroRowState.animateScrollToItem(expandedIndex)
+        }
     }
 
     LaunchedEffect(localFocusedIndex) {
@@ -419,13 +423,6 @@ private fun HeroRowSection(
                     }
 
                     val bringIntoView = remember { BringIntoViewRequester() }
-                    LaunchedEffect(isExpanded) {
-                        if (isExpanded) {
-                            // Wait out the 500ms width tween so bringIntoView measures the final wide bounds.
-                            kotlinx.coroutines.delay(520L)
-                            bringIntoView.bringIntoView()
-                        }
-                    }
 
                     val heroGlowColor = colors.focusGlow
                     Box(
