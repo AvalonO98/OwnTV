@@ -221,6 +221,9 @@ Bring up the controls in any full‑screen player (press OK / a direction). The 
     category you land on gets hidden together as a range. Handy for quickly hiding a big block of categories (or
     even scrolling all the way to hide most of the list) instead of hiding them one by one.
 - **Settings → Theme / Accent colour / UI Zoom**: dark/AMOLED/light, a tint colour, and scale the whole UI.
+  - ⚠️ Going **below 85% zoom** shows a warning first — lower zoom draws many more items at once, which can
+    crash devices with limited memory (e.g. 2 GB TV sticks) with big playlists/EPG. Press **OK** to accept
+    and continue, or **Back** to stay at 85%.
 - **Settings → Animations**: turn interface motion **off** for a snappier feel on lower‑end TV boxes.
 - **Profiles** (Settings → Profiles): multiple viewers, a **Kids mode**, and **PIN locks**.
 

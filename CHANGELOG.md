@@ -128,6 +128,14 @@
 - **Attribution** — Settings → Metadata shows the TMDB logo and the required notice: this product uses the
   TMDB API but is not endorsed or certified by TMDB.
 
+### ⚠️ Low-zoom memory warning (#51)
+
+- **Setting UI Zoom below 85% now asks you to accept the risk first.** Lower zoom draws far more
+  items on screen at once, which can crash devices with limited memory (e.g. 2 GB Fire TV sticks)
+  when combined with large playlists and EPG data. Stepping under 85% shows a one-button warning —
+  **OK** ("I understand and accept the risk") continues, **Back** keeps zoom at 85%. If your zoom is
+  already below 85%, the dialog doesn't nag.
+
 ### 🐛 Fixes
 
 - **Fixed D-pad navigation from the Movies/Series grid to the detail pane** — the display-only pane no

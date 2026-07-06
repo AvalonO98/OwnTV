@@ -14,6 +14,7 @@
 - 💾 **Backup & Restore now covers every persistent setting**
 - 🎬 **TMDB metadata enrichment (Movies, Series & Episodes)** — posters, plots, cast, genres, ratings; TMDB Details window; sort by rating; Refetch / Set TMDB name overrides
 - 🎞️ **In-app trailers for Movies & Series** — long-press → Play Trailer, D-pad seek, YouTube-app fallback
+- ⚠️ **Low-zoom memory warning (#51)** — UI Zoom below 85% asks to accept the risk on low-memory devices
 
 ### 🐛 Fixes
 
