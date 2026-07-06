@@ -235,6 +235,7 @@ fun HomeScreen(
                     if (state.heroItems.isNotEmpty()) {
                         HeroRowSection(
                             items = state.heroItems,
+                            activeHeroIndex = state.activeHeroIndex,
                             expandedIndex = expandedHeroIndex,
                             heroPreviewEngine = heroPreviewEngine,
                             engineState = engineState,
@@ -362,10 +363,17 @@ private fun rowCanRender(row: HomeRow, state: HomeUiState, showHeroFallback: Boo
         else -> rowHasData(row, state)
     }
 
+private fun HeroItem.heroKey(): String = when (this) {
+    is HeroItem.MovieHero -> "movie:${movie.id}"
+    is HeroItem.SeriesHero -> "episode:${episode.id}"
+    is HeroItem.LiveHero -> "live:${channel.id}"
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HeroRowSection(
     items: List<HeroItem>,
+    activeHeroIndex: Int,
     expandedIndex: Int,
     heroPreviewEngine: HeroPreviewEngine,
     engineState: HeroPreviewEngine.State,
@@ -390,12 +398,28 @@ private fun HeroRowSection(
     var previewRectInRowPx by remember { mutableStateOf<Rect?>(null) }
     var localFocusedIndex by remember { mutableStateOf(-1) }
     var rowWidthDp by remember { mutableStateOf(0.dp) }
+    var alignToActiveHeroKey by remember { mutableStateOf<String?>(null) }
     // Set when a focus move collapses the previously expanded card ("collapse handoff"): scroll-to-start
     // would fight the collapse animation and shove the newly focused card around, so that one move uses
     // minimal bring-into-view scrolling instead.
     var skipScrollToStart by remember { mutableStateOf(false) }
     val heroRowState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val itemsSignature = remember(items) { items.joinToString(separator = "|") { it.heroKey() } }
+    val activeHeroKey = items.getOrNull(activeHeroIndex)?.heroKey()
+
+    LaunchedEffect(itemsSignature) {
+        if (activeHeroIndex !in items.indices) return@LaunchedEffect
+
+        alignToActiveHeroKey = activeHeroKey
+        skipScrollToStart = false
+        heroRowState.scrollToItem(activeHeroIndex)
+
+        if (activeHeroIndex == 0 && localFocusedIndex >= 0 && localFocusedIndex != activeHeroIndex) {
+            localFocusedIndex = activeHeroIndex
+            runCatching { heroFocusRequester.requestFocus() }
+        }
+    }
 
     LaunchedEffect(expandedIndex, items.size) {
         // The rect is only ever written by the expanded card's onGloballyPositioned; drop it on collapse
@@ -445,13 +469,7 @@ private fun HeroRowSection(
             ) {
                 itemsIndexed(
                     items,
-                    key = { _, item ->
-                        when (item) {
-                            is HeroItem.MovieHero -> "movie:${item.movie.id}"
-                            is HeroItem.SeriesHero -> "episode:${item.episode.id}"
-                            is HeroItem.LiveHero -> "live:${item.channel.id}"
-                        }
-                    },
+                    key = { _, item -> item.heroKey() },
                 ) { index, item ->
                     val isExpanded = index == expandedIndex
                     val targetWidth = if (isExpanded) expandedWidth else Dimens.HeroBaseWidth
@@ -496,16 +514,28 @@ private fun HeroRowSection(
                                 .height(cardHeight)
                                 .then(if (index == 0) Modifier.focusRequester(heroFocusRequester) else Modifier)
                                 .onFocusChanged { fs ->
+                                    val redirectToActiveHero = fs.hasFocus &&
+                                        activeHeroIndex == 0 &&
+                                        index != activeHeroIndex &&
+                                        alignToActiveHeroKey == activeHeroKey
                                     if (fs.hasFocus) {
-                                        // expandedIndex still holds the pre-collapse value here: a focus
-                                        // move off an expanded card is the collapse handoff.
-                                        if (expandedIndex >= 0 && expandedIndex != index) {
-                                            skipScrollToStart = true
-                                            scope.launch { bringIntoView.bringIntoView() }
+                                        if (redirectToActiveHero) {
+                                            scope.launch {
+                                                heroRowState.scrollToItem(activeHeroIndex)
+                                                runCatching { heroFocusRequester.requestFocus() }
+                                            }
+                                        } else {
+                                            alignToActiveHeroKey = null
+                                            // expandedIndex still holds the pre-collapse value here: a focus
+                                            // move off an expanded card is the collapse handoff.
+                                            if (expandedIndex >= 0 && expandedIndex != index) {
+                                                skipScrollToStart = true
+                                                scope.launch { bringIntoView.bringIntoView() }
+                                            }
+                                            localFocusedIndex = index
                                         }
-                                        localFocusedIndex = index
                                     }
-                                    onHeroFocusChanged(index, fs.hasFocus)
+                                    if (!redirectToActiveHero) onHeroFocusChanged(index, fs.hasFocus)
                                 }
                                 .then(
                                     if (isExpanded) Modifier.drawBehind {
