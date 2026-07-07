@@ -2,6 +2,7 @@
 
 package tv.own.owntv.features.live
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -62,6 +63,7 @@ import tv.own.owntv.core.repository.activeProfileSources
 import tv.own.owntv.features.settings.data.SettingsRepository
 import tv.own.owntv.player.OwnTVPlayer
 import tv.own.owntv.ui.components.OwnTVIcon
+import tv.own.owntv.ui.format.formatSystemTime
 
 /** Layer-2 rail selection for Live TV. */
 sealed interface LiveKey {
@@ -78,6 +80,7 @@ data class LiveRailItem(val key: LiveKey, val abbr: String, val title: String, v
 data class EpgNowNext(val now: XtEpgEntry?, val next: XtEpgEntry?, val upcoming: List<XtEpgEntry> = emptyList())
 
 class LiveViewModel(
+    private val appContext: Context,
     private val channelDao: ChannelDao,
     private val categoryDao: CategoryDao,
     private val favoriteDao: FavoriteDao,
@@ -665,8 +668,7 @@ class LiveViewModel(
             } ?: return@launch
             if (_timeshiftOffsetSec.value == null) return@launch // user jumped back to live meanwhile
             // Show the clock time being watched (handy for the user; no credentials in logs).
-            val localLabel = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-                .apply { timeZone = java.util.TimeZone.getDefault() }.format(java.util.Date(startMs))
+            val localLabel = formatSystemTime(appContext, startMs)
             _previewChannel.value = ch
             clearLiveOnExo() // archive plays as a VOD-style mpv stream, not the live ExoPlayer channel
             player.play(url, title = ch.name, subtitle = "Rewind · $localLabel", logoUrl = ch.logoUrl, isLive = false, preferSoftware = true, userAgent = sourceUa)

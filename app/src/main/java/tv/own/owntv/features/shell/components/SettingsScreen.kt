@@ -44,6 +44,7 @@ import org.koin.androidx.compose.koinViewModel
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.own.owntv.features.customize.CustomizeScreen
+import tv.own.owntv.features.settings.HomeSettingsScreen
 import tv.own.owntv.features.settings.data.SettingsRepository
 import tv.own.owntv.features.update.UpdateDialog
 import tv.own.owntv.features.settings.BackupScreen
@@ -61,7 +62,6 @@ import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.ContentPanelFill
 import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.components.StorageBrowser
-import tv.own.owntv.ui.components.TextInputDialog
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 import tv.own.owntv.ui.theme.ThemeMode
@@ -69,7 +69,7 @@ import tv.own.owntv.ui.theme.UiZoom
 
 private enum class TileTone { PRIMARY, SECONDARY, TERTIARY }
 
-private enum class SettingsTab { ROOT, SOURCES, EPG, PROFILES, BACKUP, VIDEO, CUSTOMIZE, NETWORK, METADATA, WEATHER }
+private enum class SettingsTab { ROOT, SOURCES, EPG, PROFILES, BACKUP, VIDEO, CUSTOMIZE, HOME, NETWORK, METADATA, WEATHER }
 
 /**
  * The MD3 Settings screen (shown when [MainSection.SETTINGS] is active): grouped sections, each row
@@ -98,7 +98,6 @@ fun SettingsScreen(
     var showCatchupTime by remember { mutableStateOf(false) }
     var showClearHistory by remember { mutableStateOf(false) }
     var showAnimations by remember { mutableStateOf(false) }
-    var showStartup by remember { mutableStateOf(false) }
 
     // Dialog-close focus return: closing a dialog/picker refocuses the row that opened it (focus
     // would otherwise fall spatially back to the sidebar).
@@ -111,13 +110,12 @@ fun SettingsScreen(
     val catchupRowFocus = remember { FocusRequester() }
     val clearHistoryRowFocus = remember { FocusRequester() }
     val animationsRowFocus = remember { FocusRequester() }
-    val startupRowFocus = remember { FocusRequester() }
     // NOTE: this restore request crosses INTO the root focus group from outside (the dialog), so
     // the group's onEnter intercepts it — onEnter must consult dialogReturn first (it does, below)
     // or it would hijack the restore to its own default target. dialogReturn is cleared by onEnter.
     var dialogReturn by remember { mutableStateOf<FocusRequester?>(null) }
-    LaunchedEffect(showZoom, showTheme, showAccent, showFolderPicker, showUpdate, showAbout, showCatchupTime, showClearHistory, showAnimations, showStartup) {
-        if (!showZoom && !showTheme && !showAccent && !showFolderPicker && !showUpdate && !showAbout && !showCatchupTime && !showClearHistory && !showAnimations && !showStartup) {
+    LaunchedEffect(showZoom, showTheme, showAccent, showFolderPicker, showUpdate, showAbout, showCatchupTime, showClearHistory, showAnimations) {
+        if (!showZoom && !showTheme && !showAccent && !showFolderPicker && !showUpdate && !showAbout && !showCatchupTime && !showClearHistory && !showAnimations) {
             dialogReturn?.let { row ->
                 kotlinx.coroutines.delay(80)
                 runCatching { row.requestFocus() }
@@ -131,10 +129,7 @@ fun SettingsScreen(
     val hdr by settingsVm.hdrEnabled.collectAsStateWithLifecycle()
     val surroundSound by settingsVm.surroundSound.collectAsStateWithLifecycle()
     val autoPlayNext by settingsVm.autoPlayNext.collectAsStateWithLifecycle()
-    val androidTvHomeEnabled by settingsVm.androidTvHomeEnabled.collectAsStateWithLifecycle()
     val updateCheckOnStart by settingsVm.updateCheckOnStart.collectAsStateWithLifecycle()
-    val resumeLastChannel by settingsVm.resumeLastChannel.collectAsStateWithLifecycle()
-    val startupMode by settingsVm.startupMode.collectAsStateWithLifecycle()
     val catchupTz by settingsVm.catchupTimezone.collectAsStateWithLifecycle()
     val catchupOffset by settingsVm.catchupOffsetMinutes.collectAsStateWithLifecycle()
     val catchupChannels by settingsVm.catchupChannelCount.collectAsStateWithLifecycle()
@@ -152,6 +147,7 @@ fun SettingsScreen(
         SettingsTab.BACKUP to FocusRequester(),
         SettingsTab.VIDEO to FocusRequester(),
         SettingsTab.CUSTOMIZE to FocusRequester(),
+        SettingsTab.HOME to FocusRequester(),
         SettingsTab.NETWORK to FocusRequester(),
         SettingsTab.METADATA to FocusRequester(),
         SettingsTab.WEATHER to FocusRequester(),
@@ -174,6 +170,7 @@ fun SettingsScreen(
         SettingsTab.BACKUP -> { BackupScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
         SettingsTab.VIDEO -> { VideoPlayerSettingsScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
         SettingsTab.CUSTOMIZE -> { CustomizeScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
+        SettingsTab.HOME -> { HomeSettingsScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
         SettingsTab.NETWORK -> { tv.own.owntv.features.settings.NetworkSettingsScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
         SettingsTab.METADATA -> { tv.own.owntv.features.settings.MetadataSettingsScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
         SettingsTab.WEATHER -> { tv.own.owntv.features.settings.WeatherSettingsScreen(onBack = { tab = SettingsTab.ROOT }, modifier = modifier); return }
@@ -226,6 +223,12 @@ fun SettingsScreen(
             title = "Customize & Hidden Items", desc = "Hide & unhide items, rename & reorder categories",
             onClick = { open(SettingsTab.CUSTOMIZE) }, showChevron = true,
             modifier = Modifier.focusRequester(rowFocus.getValue(SettingsTab.CUSTOMIZE)),
+        )
+        SettingsRow(
+            tone = TileTone.SECONDARY, icon = OwnTVIcon.HOME,
+            title = "Home screen", desc = "Choose, reorder & filter the rows on Home",
+            onClick = { open(SettingsTab.HOME) }, showChevron = true,
+            modifier = Modifier.focusRequester(rowFocus.getValue(SettingsTab.HOME)),
         )
         SettingsRow(
             tone = TileTone.PRIMARY, icon = OwnTVIcon.VIDEO,
@@ -334,14 +337,6 @@ fun SettingsScreen(
             onClick = { settingsVm.setSurroundSound(!surroundSound) },
         )
         SettingsRow(
-            tone = TileTone.SECONDARY, icon = OwnTVIcon.LIVE_TV,
-            title = "Startup",
-            desc = "Where this profile opens: Home, the last live channel you watched, or Live TV on Favorites.",
-            chip = startupMode.label, chipTone = TileTone.SECONDARY,
-            onClick = { dialogReturn = startupRowFocus; showStartup = true }, showChevron = true,
-            modifier = Modifier.focusRequester(startupRowFocus),
-        )
-        SettingsRow(
             tone = TileTone.SECONDARY, icon = OwnTVIcon.SKIP_NEXT,
             title = "Auto-play next episode",
             desc = "When an episode ends, automatically start the next one — and roll into the next season.",
@@ -362,31 +357,6 @@ fun SettingsScreen(
             onClick = { dialogReturn = catchupRowFocus; showCatchupTime = true }, showChevron = true,
             modifier = Modifier.focusRequester(catchupRowFocus),
         )
-        SettingsRow(
-            tone = TileTone.SECONDARY, icon = OwnTVIcon.HISTORY,
-            title = "Android TV home", desc = "Show Continue Watching and recent live channels on the TV home screen",
-            chip = if (androidTvHomeEnabled) "On" else "Off",
-            chipTone = if (androidTvHomeEnabled) TileTone.PRIMARY else TileTone.SECONDARY,
-            onClick = { settingsVm.setAndroidTvHomeEnabled(!androidTvHomeEnabled) },
-        )
-        if (androidTvHomeEnabled) {
-            val tvHomeRefresh by settingsVm.tvHomeRefresh.collectAsStateWithLifecycle()
-            SettingsRow(
-                tone = TileTone.TERTIARY, icon = OwnTVIcon.SHARE,
-                title = "Refresh now", desc = "Rebuild the Continue Watching / recent cards on the Android TV home",
-                chip = when (tvHomeRefresh) {
-                    tv.own.owntv.features.settings.SettingsViewModel.TvHomeRefresh.REFRESHING -> "Rebuilding…"
-                    tv.own.owntv.features.settings.SettingsViewModel.TvHomeRefresh.DONE -> "Done ✓"
-                    else -> null
-                },
-                chipTone = TileTone.PRIMARY,
-                onClick = {
-                    if (tvHomeRefresh == tv.own.owntv.features.settings.SettingsViewModel.TvHomeRefresh.IDLE) {
-                        settingsVm.refreshAndroidTvHome()
-                    }
-                },
-            )
-        }
         SettingsRow(
             tone = TileTone.TERTIARY, icon = OwnTVIcon.VIDEO,
             title = "Video Player Settings", desc = "Decoder, subtitles, sync",
@@ -465,15 +435,6 @@ fun SettingsScreen(
             selected = animationLevel.name,
             onSelect = { settingsVm.setAnimationLevel(tv.own.owntv.ui.theme.AnimationLevel.valueOf(it)); showAnimations = false },
             onDismiss = { showAnimations = false },
-        )
-    }
-    if (showStartup) {
-        tv.own.owntv.features.settings.PickerDialog(
-            title = "Startup",
-            options = tv.own.owntv.features.settings.data.StartupMode.entries.map { it.name to it.label },
-            selected = startupMode.name,
-            onSelect = { settingsVm.setStartupMode(tv.own.owntv.features.settings.data.StartupMode.valueOf(it)); showStartup = false },
-            onDismiss = { showStartup = false },
         )
     }
     if (showAccent) {
