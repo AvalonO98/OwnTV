@@ -205,6 +205,7 @@ private fun SeriesGrid(
     val viewMode by vm.viewMode.collectAsStateWithLifecycle()
     val selectedSeries by vm.selectedSeries.collectAsStateWithLifecycle()
     val selectedSeriesMeta by vm.selectedSeriesMeta.collectAsStateWithLifecycle()
+    val selectedSeriesDownloads by vm.selectedSeriesDownloads.collectAsStateWithLifecycle()
     val metadataMode by vm.metadataMode.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val toast = rememberInAppToast()
@@ -426,6 +427,11 @@ private fun SeriesGrid(
                 Column(
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(Dimens.CardCorner)).background(OwnTVTheme.colors.panel).verticalScroll(rememberScrollState()).padding(Dimens.GapLarge),
                 ) {
+                    // Non-focusable status strip — only present while this series' episodes are downloading.
+                    tv.own.owntv.ui.components.downloadStripFor(selectedSeriesDownloads)?.let {
+                        tv.own.owntv.ui.components.DownloadStatusStrip(it)
+                        Spacer(Modifier.height(12.dp))
+                    }
                     // Tall portrait poster (like the list / a phone screen), centred in the pane.
                     Box(modifier = Modifier.fillMaxWidth().height(340.dp), contentAlignment = Alignment.Center) {
                         Box(
@@ -612,6 +618,7 @@ private fun EpisodeDetailPane(
     nextUpEpisode: EpisodeEntity?,
     nextUpPositionMs: Long,
     onPlayNextUp: () -> Unit,
+    downloadStrip: tv.own.owntv.ui.components.DownloadStripState? = null,
 ) {
     val colors = OwnTVTheme.colors
     if (episode == null) {
@@ -628,6 +635,11 @@ private fun EpisodeDetailPane(
         meta?.rating?.takeIf { it > 0 }?.let { "★ %.1f".format(it) },
     )
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(Dimens.GapLarge)) {
+        // Non-focusable status strip — the focused episode's own download, else the series' aggregate.
+        if (downloadStrip != null) {
+            tv.own.owntv.ui.components.DownloadStatusStrip(downloadStrip)
+            Spacer(Modifier.height(14.dp))
+        }
         // "Next up" Play card — the series' resume/continue target. Hidden when there's no next-up (all
         // caught up) or when it's the same episode already focused (OK plays it anyway).
         nextUpEpisode?.takeIf { it.id != episode.id }?.let { nup ->
@@ -759,6 +771,8 @@ private fun EpisodeView(
     val lastPlayedId by vm.lastPlayedEpisodeId.collectAsStateWithLifecycle()
     val selectedEpisode by vm.selectedEpisode.collectAsStateWithLifecycle()
     val selectedEpisodeMeta by vm.selectedEpisodeMeta.collectAsStateWithLifecycle()
+    val episodeDownloadStates by vm.episodeDownloadStates.collectAsStateWithLifecycle()
+    val openedSeriesDownloads by vm.openedSeriesDownloads.collectAsStateWithLifecycle()
     val metadataMode by vm.metadataMode.collectAsStateWithLifecycle()
     val episodeProgress by vm.episodeProgress.collectAsStateWithLifecycle()
     val completedIds by vm.completedEpisodeIds.collectAsStateWithLifecycle()
@@ -946,6 +960,9 @@ private fun EpisodeView(
                             nextUpEpisode = nextUpEp,
                             nextUpPositionMs = nextUpPos,
                             onPlayNextUp = { nextUpEp?.let { startEpisode(it) } },
+                            // The focused episode's own download, else the whole-series aggregate.
+                            downloadStrip = (ep?.let { e -> episodeDownloadStates[e.id]?.let { tv.own.owntv.ui.components.downloadStripFor(listOf(it)) } })
+                                ?: tv.own.owntv.ui.components.downloadStripFor(openedSeriesDownloads),
                         )
                     }
                 }

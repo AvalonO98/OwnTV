@@ -4,6 +4,32 @@
 
 ### ✨ New features
 
+- **Settings: search and quick toggles.** A **"Search settings…"** field at the top of Settings filters
+  the whole screen down to matching rows — results carry their group as a breadcrumb (e.g.
+  `Playback › HDR`) and act exactly like the real row, so you jump straight to a setting without hunting
+  through groups. Above it, a pinned row of one-press **quick toggles** (Live preview · Preview sound ·
+  HDR · Auto-play · Check for update) flips the most-used options without opening a sub-menu. **Back**
+  clears an active search before it leaves Settings.
+- **Search: a launcher home, a detail pane and smarter Back.** The empty Search screen is now a launcher
+  — a **"Jump to"** row (**Continue watching**, **Unwatched**, **Channels**) plus your **recent
+  searches** as chips (with **Clear**). Results moved to a **list + detail** layout: focusing a result
+  shows its poster, plot and rating in a side pane with a **primary action** button (Play / Watch live /
+  Open series), and OK still plays it directly. **Back** clears the query (returning to the launcher)
+  before it leaves Search. "Unwatched" and "Channels" are bounded to your favourites (and recent
+  history) so they stay fast on large playlists.
+- **Downloads: queue groups, a storage bar and clearer failures.** The Downloads list is now grouped
+  into **Active · Waiting · Completed · Failed** sections with counts, a **storage bar** at the top shows
+  free space (e.g. `12.4 GB free of 118 GB`), and a failed download now reads
+  **"Download failed — couldn't reach the source. Tap Retry."** next to its one-press Retry.
+- **Download status on the poster.** Start a download of a movie, a whole series, or a single episode and
+  a compact **status strip** (Downloading / Queued / Paused / Failed, with a progress bar) now appears at
+  the top of that item's poster panel — so you can see it's actually running without opening the
+  Downloads screen. The strip only shows while something is in flight and disappears once complete.
+- **Shell: a shared "Continue" chip.** The top bar now carries a compact **Continue** chip that resumes
+  your most-recent item in one press — **Resume** a movie, **Next up** an episode, or your **Last
+  channel** — labelled with the title and shown on every screen. It only takes focus from the navigation
+  panel (like the search pill), so it never gets in the way while browsing, and hides when there's
+  nothing to resume.
 - **Series episode view: watched state, "Next up" and a "Hide watched" filter.** Episodes now show a ✓
   (and a dimmed title) once watched to ≥95%, and a thin progress bar when part-watched, so you can see
   exactly where you are in a season at a glance. Season chips show a `watched/total` count

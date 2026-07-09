@@ -3,6 +3,7 @@ package tv.own.owntv.features.shell.components
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +57,7 @@ import tv.own.owntv.features.shell.MainSection
 import tv.own.owntv.ui.components.BrandLockup
 import tv.own.owntv.ui.components.BrowseMode
 import tv.own.owntv.ui.components.FocusableSurface
+import tv.own.owntv.ui.components.OwnTVTextField
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
@@ -99,6 +101,16 @@ fun SettingsScreen(
     var showClearHistory by remember { mutableStateOf(false) }
     var showAnimations by remember { mutableStateOf(false) }
     var showStartup by remember { mutableStateOf(false) }
+
+    // Batch 4 · Settings search + quick toggles. Empty query = normal grouped list; a non-blank
+    // query swaps the list for flat results that carry their group context ("Playback › HDR").
+    var searchQuery by remember { mutableStateOf("") }
+    val searchFieldFocus = remember { FocusRequester() }
+    // While searching, Back clears the query (and returns focus to the field) instead of leaving Settings.
+    BackHandler(enabled = tab == SettingsTab.ROOT && searchQuery.isNotBlank()) {
+        searchQuery = ""
+        runCatching { searchFieldFocus.requestFocus() }
+    }
 
     // Dialog-close focus return: closing a dialog/picker refocuses the row that opened it (focus
     // would otherwise fall spatially back to the sidebar).
@@ -208,6 +220,39 @@ fun SettingsScreen(
         )
         Spacer(Modifier.height(12.dp))
 
+        // --- Batch 4: quick toggles (most-used settings, one-press) ---
+        // NOTE: the four here are the current "most-used" set; making this list user-configurable
+        // is deferred (see DESIGN_PLAN_v4.0.3 Batch 4 · B).
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            QuickToggleChip("Live preview", livePreview, OwnTVIcon.LIVE_TV) { settingsVm.setLivePreviewEnabled(!livePreview) }
+            QuickToggleChip("Preview sound", previewAudio, OwnTVIcon.AUDIO) { settingsVm.setLivePreviewAudio(!previewAudio) }
+            QuickToggleChip("HDR", hdr, OwnTVIcon.VIDEO) { settingsVm.setHdrEnabled(!hdr) }
+            QuickToggleChip("Auto-play", autoPlayNext, OwnTVIcon.SKIP_NEXT) { settingsVm.setAutoPlayNext(!autoPlayNext) }
+            QuickToggleChip("Check for update", updateCheckOnStart, OwnTVIcon.DOWNLOADS) { settingsVm.setUpdateCheckOnStart(!updateCheckOnStart) }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        // --- Batch 4: settings search ---
+        OwnTVTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            label = "Search settings",
+            placeholder = "Search settings…",
+            focusRequester = searchFieldFocus,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+        )
+        Spacer(Modifier.height(12.dp))
+
+        if (searchQuery.isBlank()) {
         GroupLabel("Profile")
         SettingsRow(
             tone = TileTone.SECONDARY, icon = OwnTVIcon.PERSON,
@@ -407,6 +452,78 @@ fun SettingsScreen(
             onClick = { dialogReturn = aboutRowFocus; showAbout = true }, showChevron = true,
             modifier = Modifier.focusRequester(aboutRowFocus),
         )
+        } else {
+            // Batch 4 · search results — flat, group-context-prefixed rows ("Playback › HDR").
+            // Dialog-opening entries return focus to the search field on close (their normal row
+            // isn't composed while searching). Toggle entries keep the results visible so the chip
+            // updates live.
+            val entries = listOf(
+                SettingsSearchEntry("Profile", "Profiles", "viewers kids mode pin lock account", OwnTVIcon.PERSON, TileTone.SECONDARY) { open(SettingsTab.PROFILES) },
+                SettingsSearchEntry("Content", "Playlists", "m3u xtream source sync add remove", OwnTVIcon.PLAYLIST, TileTone.PRIMARY) { open(SettingsTab.SOURCES) },
+                SettingsSearchEntry("Content", "EPG Sources", "xmltv guide feed program", OwnTVIcon.EPG, TileTone.PRIMARY) { open(SettingsTab.EPG) },
+                SettingsSearchEntry("Content", "Customize & Hidden Items", "hide unhide rename reorder categories", OwnTVIcon.SORT, TileTone.PRIMARY) { open(SettingsTab.CUSTOMIZE) },
+                SettingsSearchEntry("Content", "Home screen", "rows hero reorder filter", OwnTVIcon.HOME, TileTone.SECONDARY) { open(SettingsTab.HOME) },
+                SettingsSearchEntry("Content", "Metadata (TMDB)", "posters plots cast ratings", OwnTVIcon.VIDEO, TileTone.PRIMARY) { open(SettingsTab.METADATA) },
+                SettingsSearchEntry("Content", "Download folder", "storage path directory", OwnTVIcon.DOWNLOADS, TileTone.TERTIARY,
+                    chip = downloadRoot.ifBlank { "App storage" }.let { java.io.File(it).name.ifBlank { it } }, chipTone = TileTone.TERTIARY) { dialogReturn = searchFieldFocus; showFolderPicker = true },
+                SettingsSearchEntry("Content", "Backup & Restore", "export import profiles sources", OwnTVIcon.DOWNLOADS, TileTone.TERTIARY) { open(SettingsTab.BACKUP) },
+                SettingsSearchEntry("Content", "Clear watch history", "recently watched continue remove", OwnTVIcon.HISTORY, TileTone.SECONDARY) { dialogReturn = searchFieldFocus; showClearHistory = true },
+                SettingsSearchEntry("Appearance", "Theme", "light dark system", OwnTVIcon.THEME, TileTone.PRIMARY,
+                    chip = themeLabel(themeMode)) { dialogReturn = searchFieldFocus; showTheme = true },
+                SettingsSearchEntry("Appearance", "Accent color", "tint palette hex preset", OwnTVIcon.PALETTE, TileTone.SECONDARY,
+                    chip = if (customAccent.isNotBlank()) customAccent.uppercase() else accent.label, chipTone = TileTone.SECONDARY) { dialogReturn = searchFieldFocus; showAccent = true },
+                SettingsSearchEntry("Appearance", "UI Zoom", "scale interface size", OwnTVIcon.ZOOM, TileTone.SECONDARY,
+                    chip = UiZoom.label(uiZoomPercent), chipTone = TileTone.SECONDARY) { dialogReturn = searchFieldFocus; showZoom = true },
+                SettingsSearchEntry("Appearance", "Animations", "motion snappier performance", OwnTVIcon.THEME, TileTone.SECONDARY,
+                    chip = animationLevel.label, chipTone = TileTone.SECONDARY) { dialogReturn = searchFieldFocus; showAnimations = true },
+                SettingsSearchEntry("Appearance", "Weather", "top bar chip location celsius fahrenheit", OwnTVIcon.EPG, TileTone.SECONDARY,
+                    chip = if (weatherEnabled) "On" else "Off", chipTone = if (weatherEnabled) TileTone.PRIMARY else TileTone.SECONDARY) { open(SettingsTab.WEATHER) },
+                SettingsSearchEntry("Playback", "Live preview", "auto play focus channel", OwnTVIcon.LIVE_TV, TileTone.TERTIARY,
+                    chip = if (livePreview) "On" else "Off", chipTone = if (livePreview) TileTone.PRIMARY else TileTone.SECONDARY, showChevron = false) { settingsVm.setLivePreviewEnabled(!livePreview) },
+                SettingsSearchEntry("Playback", "Preview audio", "sound live preview", OwnTVIcon.AUDIO, TileTone.SECONDARY,
+                    chip = if (previewAudio) "On" else "Off", chipTone = if (previewAudio) TileTone.PRIMARY else TileTone.SECONDARY, showChevron = false) { settingsVm.setLivePreviewAudio(!previewAudio) },
+                SettingsSearchEntry("Playback", "HDR", "high dynamic range output", OwnTVIcon.VIDEO, TileTone.PRIMARY,
+                    chip = if (hdr) "On" else "Off", chipTone = if (hdr) TileTone.PRIMARY else TileTone.SECONDARY, showChevron = false) { settingsVm.setHdrEnabled(!hdr) },
+                SettingsSearchEntry("Playback", "Surround sound", "dolby dts 5.1 7.1 receiver audio", OwnTVIcon.AUDIO, TileTone.SECONDARY,
+                    chip = if (surroundSound) "On" else "Off", chipTone = if (surroundSound) TileTone.PRIMARY else TileTone.SECONDARY, showChevron = false) { settingsVm.setSurroundSound(!surroundSound) },
+                SettingsSearchEntry("Playback", "Auto-play next episode", "autoplay series season", OwnTVIcon.SKIP_NEXT, TileTone.SECONDARY,
+                    chip = if (autoPlayNext) "On" else "Off", chipTone = if (autoPlayNext) TileTone.PRIMARY else TileTone.SECONDARY, showChevron = false) { settingsVm.setAutoPlayNext(!autoPlayNext) },
+                SettingsSearchEntry("Playback", "Catch-up time", "archive timezone offset", OwnTVIcon.EPG, TileTone.SECONDARY,
+                    chip = when (catchupTz) {
+                        SettingsRepository.CatchupTimezone.DEVICE -> "Device"
+                        SettingsRepository.CatchupTimezone.MANUAL -> utcOffsetLabel(catchupOffset)
+                    }) { dialogReturn = searchFieldFocus; showCatchupTime = true },
+                SettingsSearchEntry("Playback", "Video Player Settings", "decoder subtitles sync", OwnTVIcon.VIDEO, TileTone.TERTIARY) { open(SettingsTab.VIDEO) },
+                SettingsSearchEntry("Network", "Proxy", "http traffic route", OwnTVIcon.SHARE, TileTone.SECONDARY) { open(SettingsTab.NETWORK) },
+                SettingsSearchEntry("App", "App startup", "launch open landing", OwnTVIcon.HOME, TileTone.SECONDARY,
+                    chip = startupMode.label) { dialogReturn = searchFieldFocus; showStartup = true },
+                SettingsSearchEntry("App", "Check for updates", "github release version", OwnTVIcon.DOWNLOADS, TileTone.PRIMARY,
+                    chip = "v${tv.own.owntv.BuildConfig.VERSION_NAME}") { dialogReturn = searchFieldFocus; showUpdate = true },
+                SettingsSearchEntry("App", "Check updates on startup", "auto update new version", OwnTVIcon.HISTORY, TileTone.SECONDARY,
+                    chip = if (updateCheckOnStart) "On" else "Off", chipTone = if (updateCheckOnStart) TileTone.PRIMARY else TileTone.SECONDARY, showChevron = false) { settingsVm.setUpdateCheckOnStart(!updateCheckOnStart) },
+                SettingsSearchEntry("App", "About", "version license project info", OwnTVIcon.MENU, TileTone.SECONDARY) { dialogReturn = searchFieldFocus; showAbout = true },
+            )
+            val tokens = searchQuery.trim().lowercase().split(" ").filter { it.isNotBlank() }
+            val results = entries.filter { e -> tokens.all { t -> e.haystack.contains(t) } }
+            if (results.isEmpty()) {
+                Text(
+                    text = "No settings match “${searchQuery.trim()}”",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            } else {
+                results.forEach { e ->
+                    SettingsRow(
+                        tone = e.tone, icon = e.icon,
+                        title = "${e.group} › ${e.title}",
+                        chip = e.chip, chipTone = e.chipTone,
+                        showChevron = e.showChevron,
+                        onClick = e.onClick,
+                    )
+                }
+            }
+        }
     }
 
     if (showUpdate) {
@@ -1038,6 +1155,58 @@ private fun SoonChip() {
             .border(1.dp, colors.outlineVariant, RoundedCornerShape(8.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp),
     )
+}
+
+/** Batch 4 · one searchable settings row: its group breadcrumb, title, extra keywords, and action. */
+private class SettingsSearchEntry(
+    val group: String,
+    val title: String,
+    keywords: String,
+    val icon: OwnTVIcon,
+    val tone: TileTone,
+    val chip: String? = null,
+    val chipTone: TileTone = TileTone.PRIMARY,
+    val showChevron: Boolean = true,
+    val onClick: () -> Unit,
+) {
+    /** Lower-cased match target: group + title + keywords. */
+    val haystack: String = "$group $title $keywords".lowercase()
+}
+
+/** Batch 4 · a focusable most-used toggle chip shown pinned above the settings list. */
+@Composable
+private fun QuickToggleChip(
+    label: String,
+    on: Boolean,
+    icon: OwnTVIcon,
+    onToggle: () -> Unit,
+) {
+    val colors = OwnTVTheme.colors
+    val onColors = TileTone.PRIMARY.colors()
+    val offColors = TileTone.SECONDARY.colors()
+    val (bg, fg) = if (on) onColors else offColors
+    FocusableSurface(
+        onClick = onToggle,
+        shape = RoundedCornerShape(12.dp),
+        contentAlignment = Alignment.Center,
+    ) { _ ->
+        Row(
+            modifier = Modifier
+                .background(bg, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OwnTVIcon(icon = icon, tint = fg, modifier = Modifier.size(18.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = fg, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = if (on) "On" else "Off",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (on) fg else colors.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
 }
 
 @Composable

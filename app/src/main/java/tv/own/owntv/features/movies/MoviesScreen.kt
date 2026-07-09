@@ -342,6 +342,7 @@ fun MoviesScreen(
                 meta = selectedMovieMeta?.takeIf { it.movieId == selectedMovie?.id }?.cache,
                 tmdbWins = metadataMode.tmdbWins,
                 resumePositionMs = selectedProgress?.takeIf { !vm.isMovieCompleted(it) }?.positionMs?.takeIf { it > 0 },
+                downloadStrip = selectedMovie?.let { m -> downloadStates[m.id]?.let { tv.own.owntv.ui.components.downloadStripFor(listOf(it)) } },
             )
         }
     }
@@ -555,6 +556,7 @@ private fun MovieDetailsPane(
     meta: tv.own.owntv.core.database.entity.MetadataCacheEntity?,
     tmdbWins: Boolean,
     resumePositionMs: Long? = null,
+    downloadStrip: tv.own.owntv.ui.components.DownloadStripState? = null,
 ) {
     val colors = OwnTVTheme.colors
     if (movie == null) {
@@ -577,6 +579,11 @@ private fun MovieDetailsPane(
             .verticalScroll(rememberScrollState())
             .padding(Dimens.GapLarge),
     ) {
+        // Non-focusable download status strip — only present while this movie is actually downloading.
+        if (downloadStrip != null) {
+            tv.own.owntv.ui.components.DownloadStatusStrip(downloadStrip)
+            Spacer(Modifier.height(12.dp))
+        }
         // Tall portrait poster (like the list / a phone screen), centred in the pane.
         Box(modifier = Modifier.fillMaxWidth().height(340.dp), contentAlignment = Alignment.Center) {
             Box(

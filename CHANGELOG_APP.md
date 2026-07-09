@@ -13,6 +13,11 @@
 
 ### ✨ New features
 
+- **Settings: search field & one-press quick toggles**
+- **Search: launcher home (Continue / Unwatched / Channels + recent searches), list + detail pane**
+- **Downloads: Active / Waiting / Completed / Failed groups, storage bar & clearer failures**
+- **Download status strip on movie, series & episode poster panels**
+- **Shell: shared "Continue" chip to resume your last movie / episode / channel**
 - **Series: watched indicators, "Next up" card, "Hide watched" filter & manual mark-as-watched/unwatched**
 - **TV Guide: "now" line, Jump-to-Now, catch-up ↻ badges, genre dots & a bottom preview strip**
 - **Movies: watched ✓ & progress on posters, resume label & manual mark-as-watched/unwatched**

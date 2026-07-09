@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -121,6 +124,23 @@ data class GuideSliceState(
         get() = channels.isNotEmpty()
 }
 
+/** What the shared top-bar Continue chip points at (Batch 7). */
+enum class ContinueKind { LIVE, MOVIE, EPISODE }
+
+/** A single resumable target: what to play and how to label it. */
+data class ContinueTarget(
+    val kind: ContinueKind,
+    /** Display name (movie/series/channel). */
+    val name: String,
+    /** Short action word: "Resume" / "Next up" / "Last channel" / "Play". */
+    val actionLabel: String,
+    val channelId: Long = -1L,
+    val movieId: Long = -1L,
+    val seriesId: Long = -1L,
+    val episodeId: Long = -1L,
+    val positionMs: Long = 0L,
+)
+
 private const val SLICE_WINDOW_MS = 360 * 60_000L
 private const val LIVE_ROW_CHANNEL_LIMIT = 20
 private const val LIVE_ROW_EPG_LIMIT = 10
@@ -138,9 +158,40 @@ class HomeViewModel(
     private val heroPreviewEngine: HeroPreviewEngine,
     private val epgSourceStore: EpgSourceStore,
     private val epgDao: EpgDao,
+    private val historyDao: tv.own.owntv.core.database.dao.HistoryDao,
+    private val progressDao: tv.own.owntv.core.database.dao.ProgressDao,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+
+    // --- Batch 7: the single most-recent resumable item, for the shared top-bar Continue chip. ---
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val continueTarget: StateFlow<ContinueTarget?> = settings.activeProfileId
+        .flatMapLatest { pid ->
+            if (pid < 0) flowOf(null)
+            else historyDao.observeMostRecent(pid).map { h -> h?.let { resolveContinue(pid, it) } }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private suspend fun resolveContinue(
+        pid: Long,
+        h: tv.own.owntv.core.database.entity.WatchHistoryEntity,
+    ): ContinueTarget? = when (h.mediaType) {
+        MediaType.MOVIE -> movieDao.getById(h.itemId)?.let { m ->
+            val pos = progressDao.get(pid, MediaType.MOVIE, m.id)?.positionMs ?: 0L
+            ContinueTarget(ContinueKind.MOVIE, m.name, if (pos > 0) "Resume" else "Play", movieId = m.id, positionMs = pos)
+        }
+        MediaType.EPISODE -> seriesDao.getEpisodeById(h.itemId)?.let { ep ->
+            seriesDao.getSeriesById(ep.seriesId)?.let { s ->
+                val pos = progressDao.get(pid, MediaType.EPISODE, ep.id)?.positionMs ?: 0L
+                ContinueTarget(ContinueKind.EPISODE, s.name, if (pos > 0) "Resume" else "Next up", seriesId = ep.seriesId, episodeId = ep.id, positionMs = pos)
+            }
+        }
+        MediaType.LIVE -> channelDao.getById(h.itemId)?.let { c ->
+            ContinueTarget(ContinueKind.LIVE, c.name, "Last channel", channelId = c.id)
+        }
+        else -> null
+    }
 
     private val _heroFocused = MutableStateFlow(false)
     private val _previewEnabled = MutableStateFlow(true)

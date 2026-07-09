@@ -59,6 +59,9 @@ or **narrow the whole app to just one**.
   to **resume right where you left off**.
 - Below are more rows — **Favourite Channels**, **Continue Watching Movies/Series**, and an optional
   **Recent Channels** row (off by default).
+- ▶️ **"Continue" chip (top bar, every screen):** a compact chip resumes your **most‑recent** item in one
+  press — **Resume** a movie, **Next up** an episode, or your **Last channel** — labelled with the title.
+  Reach it from the navigation panel (like the search pill); it hides when there's nothing to resume.
 - 🧩 **Make Home yours (Settings → Home screen, per profile):** **reorder or hide every row**, **filter the
   Keep Watching hero** (include/exclude live channels, movies, series), and switch the live‑channel rows
   between **Cards** and **On Now** — an inline mini‑guide showing what's airing now with a progress bar and
@@ -226,8 +229,28 @@ or **narrow the whole app to just one**.
 
 ## 🔎 Search
 
-- The **Search** tab searches **Live, Movies and Series together**, with a detailed result view.
+- The **Search** tab searches **Live, Movies and Series together**.
+- 🚀 **Launcher home**: with the box empty, Search shows a **"Jump to"** row — **Continue watching**,
+  **Unwatched** and **Channels** — plus your **recent searches** as chips (tap **Clear** to wipe them).
+  Tap a chip to jump straight in without typing.
+- 🖼️ **Detail pane**: focus any result to see its **poster, plot and rating** on the right, with a
+  **primary action** button (Play / Watch live / Open series). Pressing **OK** on the result still plays
+  it directly.
+- ↩️ **Back**: the first **Back** clears your query (back to the launcher); a second **Back** leaves Search.
 - You can **favourite a channel straight from search** via **long‑press**.
+
+---
+
+## 📥 Downloads
+
+- The **Downloads** tab groups items into **Active · Waiting · Completed · Failed**, with a **storage
+  bar** at the top showing free space.
+- **Long‑press / OK** a card for **Pause · Resume · Retry · Delete**. A failed download tells you to
+  **Tap Retry**.
+- 📍 **See it downloading without leaving the page**: when you start a download of a **movie**, a **whole
+  series**, or a **single episode**, a small **status strip** (Downloading / Queued / Paused, with a
+  progress bar) appears at the top of that item's **poster panel**. It only shows while a download is in
+  flight and disappears once it finishes.
 
 ---
 
@@ -272,6 +295,10 @@ Bring up the controls in any full‑screen player (press OK / a direction). The 
 
 ## ⚙️ Settings worth knowing
 
+- 🔎 **Search settings** — type in the **"Search settings…"** box at the top to filter the whole screen to
+  matching rows; results show their group (e.g. `Playback › HDR`) and open the setting directly. **Back**
+  clears the search first. Above it, one‑press **quick toggles** (Live preview · Preview sound · HDR ·
+  Auto‑play · Check for update) flip the most‑used options without opening a sub‑menu.
 - 🧭 **Menu layout** — **Profiles** is the first row; **Live preview / Preview audio** are under
   **Playback**; **App startup** is under **App**; the **Home screen** page is under Content.
 - 🚀 **App startup** — where each profile opens: **Home**, **Last channel** (auto‑plays the channel you last

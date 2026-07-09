@@ -203,6 +203,24 @@ class SeriesViewModel(
     private val _openedSeries = MutableStateFlow<SeriesEntity?>(null)
     val openedSeries: StateFlow<SeriesEntity?> = _openedSeries.asStateFlow()
 
+    // --- Download status for poster-panel strips (display-only) ---
+
+    /** Active episode-download rows keyed by episode id — for the focused-episode strip. */
+    val episodeDownloadStates: StateFlow<Map<Long, DownloadEntity>> = ctx
+        .flatMapLatest { c -> if (c.profileId < 0) flowOf(emptyList()) else downloadManager.observe(c.profileId) }
+        .map { list -> list.filter { it.mediaType == MediaType.EPISODE }.associateBy { it.itemId } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** All episode downloads for the grid-selected series (entire-series aggregate strip). */
+    val selectedSeriesDownloads: StateFlow<List<DownloadEntity>> = _selectedSeries
+        .flatMapLatest { s -> if (s == null) flowOf(emptyList()) else downloadManager.observeForSeries(s.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** All episode downloads for the opened series (aggregate strip inside the episode view). */
+    val openedSeriesDownloads: StateFlow<List<DownloadEntity>> = _openedSeries
+        .flatMapLatest { s -> if (s == null) flowOf(emptyList()) else downloadManager.observeForSeries(s.id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val _selectedSeason = MutableStateFlow(1)
     val selectedSeason: StateFlow<Int> = _selectedSeason.asStateFlow()
 
