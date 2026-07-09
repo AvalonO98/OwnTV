@@ -330,7 +330,7 @@ Bring up the controls in any full‑screen player (press OK / a direction). The 
   should leave this off.
 - 🔄 **Check updates on startup** — get notified when a newer version is on GitHub Releases.
 - 💾 **Backup & Restore** — export/restore your profiles, sources, customizations, favorites, history,
-  resume positions and app settings. On export you can set a **backup password** to encrypt saved
+  resume positions, **manual Move positions** and app settings. On export you can set a **backup password** to encrypt saved
   passwords (source & proxy); without one, passwords are left out of the file. Restoring an encrypted
   backup asks for that password — enter it to bring passwords back, or **Skip** to restore everything
   else and re‑enter passwords later. Backups also preserve your **per‑source Auto refresh** choices,

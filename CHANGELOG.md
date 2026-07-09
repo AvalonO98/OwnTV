@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.0.3 — Unreleased
+## v4.0.3 — 2026-07-09
 
 ### ✨ New features
 
@@ -90,6 +90,12 @@
   switcher while sitting on Home now updates the hero, Continue Watching, Recent and Favourites rows in
   place — previously you had to leave and reopen Home to see the new source's content (community PR #62
   by [@codeVerine](https://github.com/codeVerine) — Sagar Mukundan UV).
+- **Manual reorder now survives Backup & Restore.** The Move up/down positions you set for channels,
+  movies and series (the `content_order` table from v4.0.0) were never written to a backup or restored
+  — the resolver supported it but the backup section picker never asked for it. Backup & Restore now
+  has a dedicated **Manual reorder** section (export and restore) so your custom order comes back after
+  a restore. Existing backup files still restore cleanly; older files simply have no reorder data to
+  apply.
 
 ## v4.0.2 — 2026-07-07
 

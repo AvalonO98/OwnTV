@@ -112,7 +112,7 @@ Scan to join from your phone:
 - **Content** — clear watch history (all or per-type); per-source **Auto refresh** for playlists & EPG (Off by default, startup or 6–48h staleness intervals)
 - **Video Player** — hardware decoding, zoom, subtitle size/language, audio sync, surround sound, HDR, **external player** (VLC / MX Player for movies, series & downloads — global setting or per-item long-press)
 - **Weather** — top-bar weather chip: on/off, custom location (VPN-friendly), **°C / °F**
-- **Backup & Restore** — profiles, sources, customizations, favorites, history, resume, settings, auto-refresh choices, default source and per-item engine/compatibility pins; choose what to include
+- **Backup & Restore** — profiles, sources, customizations, favorites, history, resume, manual Move positions, settings, auto-refresh choices, default source and per-item engine/compatibility pins; choose what to include
 - **Updates** — in-app from GitHub Releases; auto-check (toggleable) + manual; installs APK on TV
 - **Android TV home** — feeds system Watch Next row; refresh button
 

@@ -9,7 +9,7 @@
 > (e.g. `(community PR #40 by @codeVerine)`). Issue numbers that are part of a title (e.g. `(#57)`) are
 > fine; explanatory parentheticals are not. Descriptions belong in CHANGELOG.md, never here.
 
-## v4.0.3 — Unreleased
+## v4.0.3 — 2026-07-09
 
 ### ✨ New features
 
@@ -31,6 +31,7 @@
 - **Favourite "On Now" mini-guide now covers every favourite channel** (community PR #62 by @codeVerine)
 - **Home hero & Continue Watching tiles now use TMDB backdrops, logos & plot** (community PR #62 by @codeVerine)
 - **Home now refreshes in place after switching the top-bar playlist** (community PR #62 by @codeVerine)
+- **Manual reorder (Move positions) now included in Backup & Restore**
 
 ## v4.0.2 — 2026-07-07
 
