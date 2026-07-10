@@ -14,6 +14,10 @@
 ### 🐛 Fixes
 
 - **A–Z sorting now applies to categories too**
+- **Faster playlist import on huge playlists**
+- **Scheduled syncs now retry after network blips**
+- **Player stability hardening**
+- **More accurate playback error diagnosis**
 
 ### 🔧 Under the hood
 

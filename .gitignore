@@ -29,3 +29,4 @@ signing.properties
 
 # Internal planning documents — kept local, never committed
 future-plan/
+OPTIMIZATION_PLAN.md

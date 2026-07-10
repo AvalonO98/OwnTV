@@ -2,6 +2,29 @@
 
 ## v4.1.0 — Unreleased
 
+### ⚡ Performance & reliability
+
+- **Faster playlist import on huge playlists.** The M3U parser now extracts all `#EXTINF` attributes
+  in a single scan of each line (previously ~10 separate searches per channel), and the detailed
+  per-item timing instrumentation in both the M3U and Xtream parsers is now off unless explicitly
+  enabled for debugging (`setprop log.tag.M3uParser DEBUG` / `log.tag.XtreamClient DEBUG`) — removing
+  millions of clock syscalls from a 100k+ item sync. The single-scan parser also fixes a subtle
+  mis-parse where a key could match inside a longer key (e.g. `type` inside `tvg-type="…"`).
+- **Scheduled syncs now retry after network blips.** A playlist or EPG auto-refresh that failed on a
+  transient error (offline, timeout, connection reset, server 5xx) previously gave up until the next
+  scheduled window, leaving content stale. Both sync workers now ask WorkManager to retry with backoff
+  (up to 3 attempts); permanent errors (bad credentials/URL, malformed data) still fail immediately.
+  Xtream category-list fetches also get up to 3 HTTP attempts, and server 5xx/429 responses are retried
+  safely (only when no data was consumed yet).
+- **Player stability hardening.** The stream-info chips (fps / audio layout) no longer read libmpv
+  properties on the UI thread — on a stalling stream those reads can block for seconds and caused
+  potential freezes/ANRs. Queued freeze-frame callbacks are now cleared when the player is released, so
+  they can never fire against a destroyed surface.
+- **More accurate playback error diagnosis.** The plain-English error mapper no longer mis-labels
+  errors whose stream URL merely *contains* digits like `509`/`403` as HTTP provider errors, and a
+  spurious "out of memory" match on any `-12` substring is fixed. The background codec-error log tail
+  now restarts itself if the system kills it, so error details keep working for the whole session.
+
 ### 🐛 Fixes
 
 - **A–Z sorting now applies to categories too.** The sort chip in Live TV, Movies and Series only
