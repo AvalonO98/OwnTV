@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /** A focusable poster tile for the Movies/Series grids: poster, title, rating, resume bar, fav star. */
@@ -48,7 +49,7 @@ fun PosterCard(
         onLongClick = onLongClick,
         modifier = modifier.onFocusChanged { if (it.hasFocus) onFocus() },
         selected = selected,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(Dimens.PosterCardCorner),
         focusedScale = 1.06f,
         glowElevation = 14,
         focusedContainerColor = colors.surfaceContainerHigh,
@@ -56,14 +57,14 @@ fun PosterCard(
         selectedContainerColor = colors.surfaceContainerHigh,
         contentAlignment = Alignment.Center,
     ) { focused ->
-        Column(modifier = Modifier.fillMaxWidth().padding(6.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(Dimens.PosterPadding)) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     // Taller, phone-screen-like poster. Crop (not Fit) so a standard 2:3 poster fills the
                     // slightly taller box instead of letterboxing.
                     .aspectRatio(2f / 3.2f)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(RoundedCornerShape(Dimens.PosterArtCorner))
                     .background(colors.surfaceContainerLowest),
             ) {
                 if (!posterUrl.isNullOrBlank()) {
@@ -121,19 +122,19 @@ fun PosterCard(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .fillMaxWidth()
-                            .height(4.dp)
+                            .height(Dimens.PosterProgressHeight)
                             .background(Color.Black.copy(alpha = 0.4f)),
                     ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(progressFraction.coerceIn(0f, 1f))
-                                .height(4.dp)
+                                .height(Dimens.PosterProgressHeight)
                                 .background(colors.primary),
                         )
                     }
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Dimens.PosterPadding))
             Text(
                 title,
                 style = MaterialTheme.typography.labelLarge,

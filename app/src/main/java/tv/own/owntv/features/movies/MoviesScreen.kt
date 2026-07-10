@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemContentType
+import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -71,6 +73,8 @@ import tv.own.owntv.ui.components.ResumeDialog
 import tv.own.owntv.ui.components.SetTmdbNameDialog
 import tv.own.owntv.ui.components.TrailerPlayerScreen
 import tv.own.owntv.ui.components.longPressMenuGuard
+import tv.own.owntv.ui.components.dialogPanel
+import tv.own.owntv.ui.components.gridFocusTarget
 import androidx.compose.foundation.layout.width
 import tv.own.owntv.ui.components.SearchBar
 import tv.own.owntv.ui.components.trapVerticalFocusExit
@@ -279,7 +283,11 @@ fun MoviesScreen(
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(movies.itemCount) { index ->
+                    items(
+                        count = movies.itemCount,
+                        key = movies.itemKey { it.id },
+                        contentType = movies.itemContentType { "movie" },
+                    ) { index ->
                         val movie = movies[index]
                         if (movie != null) {
                             val prog = movieProgress[movie.id]
@@ -287,12 +295,12 @@ fun MoviesScreen(
                                 movie = movie,
                                 isFavorite = favoriteIds.contains(movie.id),
                                 completed = prog?.let { vm.isMovieCompleted(it) } == true,
-                                modifier = when {
-                                    movie.id == contextMovieId -> Modifier.focusRequester(contextFocus)
-                                    movie.id == selectedMovie?.id -> Modifier.focusRequester(selFocus)
-                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
-                                    else -> Modifier
-                                },
+                                modifier = Modifier.gridFocusTarget(
+                                    itemId = movie.id, index = index,
+                                    contextId = contextMovieId, contextFocus = contextFocus,
+                                    selectedId = selectedMovie?.id, selectedFocus = selFocus,
+                                    firstItemFocus = firstItemFocus,
+                                ),
                                 onFocus = { vm.onMovieFocused(movie) },
                                 onClick = { startMovie(movie) },
                                 onLongClick = { contextMovie = movie; contextMovieId = movie.id; contextMovieIndex = index },
@@ -307,7 +315,11 @@ fun MoviesScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(movies.itemCount) { index ->
+                    items(
+                        count = movies.itemCount,
+                        key = movies.itemKey { it.id },
+                        contentType = movies.itemContentType { "movie" },
+                    ) { index ->
                         val movie = movies[index]
                         if (movie != null) {
                             val prog = movieProgress[movie.id]
@@ -320,12 +332,12 @@ fun MoviesScreen(
                                 progressFraction = if (done || prog == null || prog.durationMs <= 0) null
                                     else (prog.positionMs.toFloat() / prog.durationMs).takeIf { it > 0f },
                                 isFavorite = favoriteIds.contains(movie.id),
-                                modifier = when {
-                                    movie.id == contextMovieId -> Modifier.focusRequester(contextFocus)
-                                    movie.id == selectedMovie?.id -> Modifier.focusRequester(selFocus)
-                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
-                                    else -> Modifier
-                                },
+                                modifier = Modifier.gridFocusTarget(
+                                    itemId = movie.id, index = index,
+                                    contextId = contextMovieId, contextFocus = contextFocus,
+                                    selectedId = selectedMovie?.id, selectedFocus = selFocus,
+                                    firstItemFocus = firstItemFocus,
+                                ),
                                 onFocus = { vm.onMovieFocused(movie) },
                                 onClick = { startMovie(movie) },
                                 onLongClick = { contextMovie = movie; contextMovieId = movie.id; contextMovieIndex = index },
@@ -507,7 +519,7 @@ private fun MovieContextMenu(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(24.dp),
+            modifier = Modifier.dialogPanel(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)

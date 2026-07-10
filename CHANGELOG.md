@@ -2,6 +2,14 @@
 
 ## v4.1.0 — Unreleased
 
+### ✨ New features
+
+- **Playback error log in Settings.** The last ~10 playback failures are now kept on the device —
+  each with its plain-English reason, the stream's codec/resolution spec, the raw engine error, the
+  engine (mpv/ExoPlayer), Live/VOD, and your device model/Android version. Open **Settings →
+  Playback → Playback error log** to read (or clear) them, so you can report exactly what happened
+  even after dismissing the error screen or restarting the app — no adb/logcat needed.
+
 ### ⚡ Performance & reliability
 
 - **Faster playlist import on huge playlists.** The M3U parser now extracts all `#EXTINF` attributes
@@ -24,8 +32,40 @@
   errors whose stream URL merely *contains* digits like `509`/`403` as HTTP provider errors, and a
   spurious "out of memory" match on any `-12` substring is fixed. The background codec-error log tail
   now restarts itself if the system kills it, so error details keep working for the whole session.
+- **Much faster global search on huge catalogs.** Search-as-you-type now uses the full-text index
+  instead of scanning every movie/series/channel name per keystroke — on a 170k-movie catalog each
+  keystroke was a full table scan. Matching is now by word prefix ("harry pot" finds
+  "Harry Potter…"); folder-scoped search keeps the old substring behaviour.
+- **Big folders page faster.** Folders where you never used **Move** (manual reorder) now use the
+  plain indexed query instead of the reorder-aware join that re-sorted the whole folder on every
+  page turn. Folders with manual positions behave exactly as before.
+- **Smoother UI during large syncs.** The live item-count badges (Live/Movies/Series and the EPG
+  programme count) now refresh at most once per second during a bulk import instead of re-counting
+  the whole table after every committed batch.
+- **Posters and channel logos are cached on disk.** Artwork now survives app restarts (capped at
+  250 MB) instead of re-downloading every session, loads offline once seen, and opaque poster
+  bitmaps use half the memory.
+- **Faster, safer backup restore.** Restoring thousands of favorites/history/resume records used to
+  run one database transaction per record; they're now batched (500 per transaction). The
+  profiles-and-sources restore is atomic: a crash mid-restore can no longer leave a half-restored
+  database.
+- **Faster first launch when upgrading from v3.2.0 or older.** The one-time database migration no
+  longer de-duplicates the (huge) cached TV guide row-by-row — it clears the rebuildable guide cache
+  instead, so the first launch after a big version jump is instant. The guide re-downloads on your
+  next EPG sync. (Upgrades from any 4.x version are unaffected.)
+- **TMDB caches no longer grow forever.** Metadata cached for items you haven't opened in 90 days is
+  cleaned up after each playlist sync and simply re-fetches if you come back to them.
 
 ### 🐛 Fixes
+
+- **Dialogs no longer get cut off on small screens.** On low-resolution/overscanned TVs, tall popup
+  dialogs (New profile, context menus, Settings dialogs, catch-up & EPG-match pickers, the setup
+  wizard, and more) could extend past the screen with no way to reach the lower buttons — profile
+  creation could not be completed at all. Every popup is now scrollable (D-pad focus scrolls
+  off-screen controls into view) and list pickers cap their height to the screen.
+- **Grids keep your place through background refreshes.** The Movies/Series/Live lists and grids now
+  track items by identity instead of position, so a background re-sync or list update no longer
+  scrambles D-pad focus or recomposes every visible poster.
 
 - **A–Z sorting now applies to categories too.** The sort chip in Live TV, Movies and Series only
   reordered the items inside a folder — the category rail itself always stayed in provider order.
@@ -38,6 +78,10 @@
 
 ### 🔧 Under the hood
 
+- **Sync engine de-duplicated.** The three near-identical Xtream phase implementations
+  (Live/Movies/Series: fresh-vs-stable upsert, per-category 512 fallback, prune) are now one generic
+  phase parameterized per content type, so future fixes to the sync logic land once instead of three
+  times. Behavior-identical; the category refresh also drops a redundant second database lookup.
 - **Media3 (ExoPlayer) bumped 1.10.0 → 1.10.1.** ExoPlayer drives the image-subtitle (PGS/VOBSUB/DVB)
   handoff and the VOD mpv→Exo fallback, so this patch release lands fixes directly on those paths:
   a crash when recovering from decoder errors with renderer prewarming (the fallback triggers this),

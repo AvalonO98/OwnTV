@@ -11,10 +11,22 @@
 
 ## v4.1.0 — Unreleased
 
+### ✨ New features
+
+- **Playback error log in Settings**
+
 ### 🐛 Fixes
 
+- **Dialogs no longer get cut off on small screens**
 - **A–Z sorting now applies to categories too**
+- **Grids keep your place through background refreshes**
+- **Much faster global search on huge catalogs**
 - **Faster playlist import on huge playlists**
+- **Big folders page faster**
+- **Smoother UI during large syncs**
+- **Posters and channel logos are cached on disk**
+- **Faster, safer backup restore**
+- **Faster first launch when upgrading from v3.2.0 or older**
 - **Scheduled syncs now retry after network blips**
 - **Player stability hardening**
 - **More accurate playback error diagnosis**

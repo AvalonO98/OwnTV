@@ -78,6 +78,7 @@ import tv.own.owntv.ui.components.roundedPanel
 import tv.own.owntv.ui.components.OwnTVSpinner
 import tv.own.owntv.ui.components.SearchBar
 import tv.own.owntv.ui.components.trapVerticalFocusExit
+import tv.own.owntv.ui.components.dialogPanel
 import tv.own.owntv.features.epg.GuideGridDefaults
 import tv.own.owntv.features.epg.ProgrammeDetailDialog
 import tv.own.owntv.features.epg.ProgrammeStripCanvas
@@ -483,7 +484,9 @@ private fun EpgMatchReviewDialog(
                 style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
-            LazyColumn(Modifier.fillMaxWidth().height(360.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Cap to the screen (minus dialog chrome) so the footer buttons stay reachable on small screens.
+            val listHeight = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp - 200.dp).coerceIn(160.dp, 360.dp)
+            LazyColumn(Modifier.fillMaxWidth().height(listHeight), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 itemsIndexed(suggestions, key = { _, s -> s.channel.id }) { index, s ->
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface).padding(horizontal = 12.dp, vertical = 8.dp),
@@ -549,7 +552,7 @@ private fun EpgMatchChooserDialog(
             .longPressMenuGuard(), // long-press OK is still held — don't auto-click Auto-match
         contentAlignment = Alignment.Center,
     ) {
-        Column(Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(24.dp)) {
+        Column(Modifier.dialogPanel()) {
             Text("Match EPG", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
             Spacer(Modifier.height(2.dp))
             Text(

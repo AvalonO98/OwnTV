@@ -46,6 +46,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemContentType
+import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -83,6 +85,8 @@ import tv.own.owntv.ui.components.formatCount
 import tv.own.owntv.ui.components.ContentPanelFill
 import tv.own.owntv.ui.components.PreviewPanelFill
 import tv.own.owntv.ui.components.roundedPanel
+import tv.own.owntv.ui.components.dialogPanel
+import tv.own.owntv.ui.components.gridFocusTarget
 import tv.own.owntv.ui.theme.Dimens
 import tv.own.owntv.ui.theme.OwnTVTheme
 
@@ -155,7 +159,7 @@ private fun SeriesContextMenu(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(24.dp),
+            modifier = Modifier.dialogPanel(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -354,18 +358,22 @@ private fun SeriesGrid(
                     state = listState,
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(series.itemCount) { index ->
+                    items(
+                        count = series.itemCount,
+                        key = series.itemKey { it.id },
+                        contentType = series.itemContentType { "series" },
+                    ) { index ->
                         val s = series[index]
                         if (s != null) {
                             SeriesListRow(
                                 series = s,
                                 isFavorite = favoriteIds.contains(s.id),
-                                modifier = when {
-                                    s.id == contextSeriesId -> Modifier.focusRequester(contextFocus)
-                                    s.id == selectedSeries?.id -> Modifier.focusRequester(gridSelFocus)
-                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
-                                    else -> Modifier
-                                },
+                                modifier = Modifier.gridFocusTarget(
+                                    itemId = s.id, index = index,
+                                    contextId = contextSeriesId, contextFocus = contextFocus,
+                                    selectedId = selectedSeries?.id, selectedFocus = gridSelFocus,
+                                    firstItemFocus = firstItemFocus,
+                                ),
                                 onFocus = { vm.onSeriesFocused(s) },
                                 onClick = { vm.openSeries(s) },
                                 onLongClick = { contextSeries = s; contextSeriesId = s.id; contextSeriesIndex = index },
@@ -380,7 +388,11 @@ private fun SeriesGrid(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(series.itemCount) { index ->
+                    items(
+                        count = series.itemCount,
+                        key = series.itemKey { it.id },
+                        contentType = series.itemContentType { "series" },
+                    ) { index ->
                         val s = series[index]
                         if (s != null) {
                             PosterCard(
@@ -388,12 +400,12 @@ private fun SeriesGrid(
                                 title = s.name,
                                 rating = s.rating,
                                 isFavorite = favoriteIds.contains(s.id),
-                                modifier = when {
-                                    s.id == contextSeriesId -> Modifier.focusRequester(contextFocus)
-                                    s.id == selectedSeries?.id -> Modifier.focusRequester(gridSelFocus)
-                                    index == 0 -> Modifier.focusRequester(firstItemFocus)
-                                    else -> Modifier
-                                },
+                                modifier = Modifier.gridFocusTarget(
+                                    itemId = s.id, index = index,
+                                    contextId = contextSeriesId, contextFocus = contextFocus,
+                                    selectedId = selectedSeries?.id, selectedFocus = gridSelFocus,
+                                    firstItemFocus = firstItemFocus,
+                                ),
                                 onFocus = { vm.onSeriesFocused(s) },
                                 onClick = { vm.openSeries(s) },
                                 onLongClick = { contextSeries = s; contextSeriesId = s.id; contextSeriesIndex = index },
@@ -705,7 +717,7 @@ private fun EpisodeContextMenu(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(24.dp),
+            modifier = Modifier.dialogPanel(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)

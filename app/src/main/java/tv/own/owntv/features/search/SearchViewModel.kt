@@ -150,9 +150,26 @@ class SearchViewModel(
         )
     }
 
+    /**
+     * Builds a sanitized FTS4 MATCH expression from user text: each whitespace-separated token is
+     * stripped to letters/digits and turned into a prefix term ("harry pot" → "harry* pot*", implicit
+     * AND). Returns null when nothing tokenizable remains (symbols-only input) — caller falls back to
+     * the substring LIKE queries. Prefix-token semantics differ slightly from substring LIKE
+     * (matches word starts, not mid-word substrings), which is the accepted trade-off for an
+     * index-served search over ~220k rows per keystroke (A3).
+     */
+    private fun ftsQueryFor(q: String): String? {
+        val tokens = q.split(Regex("\\s+"))
+            .map { t -> t.filter { it.isLetterOrDigit() } }
+            .filter { it.isNotEmpty() }
+        if (tokens.isEmpty()) return null
+        return tokens.joinToString(" ") { "$it*" }
+    }
+
     private suspend fun search(q: String): SearchResults {
         val pid = currentProfileId() ?: return SearchResults()
         val ids = ctx.value.sourceIds.ifEmpty { return SearchResults() }
+        val fts = ftsQueryFor(q)
         // Respect this profile's customizations: hidden items and hidden categories never surface,
         // renames are shown (channels only — movies/series have no per-item rename).
         val custLive = customize.observe(pid, MediaType.LIVE).first()
@@ -162,18 +179,18 @@ class SearchViewModel(
         val hiddenMovieCats = hiddenCategoryIds(ids, MediaType.MOVIE, custMovie)
         val hiddenSeriesCats = hiddenCategoryIds(ids, MediaType.SERIES, custSeries)
         return SearchResults(
-            channels = channelDao.searchListDetailed(q, ids, LIMIT)
+            channels = (if (fts != null) channelDao.searchListDetailedFts(fts, ids, LIMIT) else channelDao.searchListDetailed(q, ids, LIMIT))
                 .filter {
                     CustomizeKeys.channel(it.channel) !in custLive.hiddenItems &&
                         (it.channel.categoryId == null || it.channel.categoryId !in hiddenLiveCats)
                 }
                 .map { row -> custLive.itemNames[CustomizeKeys.channel(row.channel)]?.let { row.copy(channel = row.channel.copy(name = it)) } ?: row },
-            movies = movieDao.searchList(q, ids, LIMIT)
+            movies = (if (fts != null) movieDao.searchListFts(fts, ids, LIMIT) else movieDao.searchList(q, ids, LIMIT))
                 .filter {
                     CustomizeKeys.movie(it) !in custMovie.hiddenItems &&
                         (it.categoryId == null || it.categoryId !in hiddenMovieCats)
                 },
-            series = seriesDao.searchList(q, ids, LIMIT)
+            series = (if (fts != null) seriesDao.searchListFts(fts, ids, LIMIT) else seriesDao.searchList(q, ids, LIMIT))
                 .filter {
                     CustomizeKeys.series(it) !in custSeries.hiddenItems &&
                         (it.categoryId == null || it.categoryId !in hiddenSeriesCats)

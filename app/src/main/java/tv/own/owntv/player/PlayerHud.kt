@@ -58,6 +58,7 @@ import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.OwnTVSpinner
+import tv.own.owntv.ui.components.dialogPanel
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 private val SPEEDS = listOf(0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
@@ -871,7 +872,7 @@ private fun VolumeDialog(player: PlaybackEngine, onDismiss: () -> Unit) {
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
-            Column(Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.dialogPanel(padding = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Volume", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
                 Spacer(Modifier.height(20.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -912,7 +913,9 @@ private fun DialogScaffold(title: String, onDismiss: () -> Unit, content: androi
             Column(modifier = Modifier.width(440.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(24.dp)) {
                 Text(title, style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
                 Spacer(Modifier.height(12.dp))
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)
+                // Cap to the screen (minus dialog chrome) so all rows stay reachable on small screens.
+                val listMax = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp - 160.dp).coerceIn(160.dp, 360.dp)
+                LazyColumn(modifier = Modifier.heightIn(max = listMax), verticalArrangement = Arrangement.spacedBy(6.dp), content = content)
             }
         }
     }

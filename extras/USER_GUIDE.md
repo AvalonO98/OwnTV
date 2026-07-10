@@ -330,6 +330,10 @@ Bring up the controls in any full‑screen player (press OK / a direction). The 
   receiver**. On TV speakers or a stereo soundbar it can make **audio lag behind video (lip‑sync drift)** —
   if you enable it and see drift, fix it live with the player's **Audio → A/V sync** nudge. Most people
   should leave this off.
+- 🩺 **Playback error log** (Playback) — the last ~10 playback failures with their plain‑English
+  reason, stream details and device info. If a channel or movie errored and you dismissed the
+  message, open this to read (or clear) exactly what happened — perfect for bug reports, no computer
+  needed.
 - 🔄 **Check updates on startup** — get notified when a newer version is on GitHub Releases.
 - 💾 **Backup & Restore** — export/restore your profiles, sources, customizations, favorites, history,
   resume positions, **manual Move positions** and app settings. On export you can set a **backup password** to encrypt saved

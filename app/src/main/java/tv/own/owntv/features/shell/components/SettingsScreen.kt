@@ -59,6 +59,7 @@ import tv.own.owntv.ui.components.BrowseMode
 import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVTextField
 import tv.own.owntv.ui.components.OwnTVButton
+import tv.own.owntv.ui.components.dialogPanel
 import tv.own.owntv.ui.components.OwnTVButtonStyle
 import tv.own.owntv.ui.components.OwnTVIcon
 import tv.own.owntv.ui.components.ContentPanelFill
@@ -101,6 +102,7 @@ fun SettingsScreen(
     var showClearHistory by remember { mutableStateOf(false) }
     var showAnimations by remember { mutableStateOf(false) }
     var showStartup by remember { mutableStateOf(false) }
+    var showErrorLog by remember { mutableStateOf(false) }
 
     // Batch 4 · Settings search + quick toggles. Empty query = normal grouped list; a non-blank
     // query swaps the list for flat results that carry their group context ("Playback › HDR").
@@ -124,12 +126,13 @@ fun SettingsScreen(
     val clearHistoryRowFocus = remember { FocusRequester() }
     val animationsRowFocus = remember { FocusRequester() }
     val startupRowFocus = remember { FocusRequester() }
+    val errorLogRowFocus = remember { FocusRequester() }
     // NOTE: this restore request crosses INTO the root focus group from outside (the dialog), so
     // the group's onEnter intercepts it — onEnter must consult dialogReturn first (it does, below)
     // or it would hijack the restore to its own default target. dialogReturn is cleared by onEnter.
     var dialogReturn by remember { mutableStateOf<FocusRequester?>(null) }
-    LaunchedEffect(showZoom, showTheme, showAccent, showFolderPicker, showUpdate, showAbout, showCatchupTime, showClearHistory, showAnimations, showStartup) {
-        if (!showZoom && !showTheme && !showAccent && !showFolderPicker && !showUpdate && !showAbout && !showCatchupTime && !showClearHistory && !showAnimations && !showStartup) {
+    LaunchedEffect(showZoom, showTheme, showAccent, showFolderPicker, showUpdate, showAbout, showCatchupTime, showClearHistory, showAnimations, showStartup, showErrorLog) {
+        if (!showZoom && !showTheme && !showAccent && !showFolderPicker && !showUpdate && !showAbout && !showCatchupTime && !showClearHistory && !showAnimations && !showStartup && !showErrorLog) {
             dialogReturn?.let { row ->
                 kotlinx.coroutines.delay(80)
                 runCatching { row.requestFocus() }
@@ -413,6 +416,12 @@ fun SettingsScreen(
             onClick = { open(SettingsTab.VIDEO) }, showChevron = true,
             modifier = Modifier.focusRequester(rowFocus.getValue(SettingsTab.VIDEO)),
         )
+        SettingsRow(
+            tone = TileTone.SECONDARY, icon = OwnTVIcon.HISTORY,
+            title = "Playback error log", desc = "The last playback failures — details to read or report",
+            onClick = { dialogReturn = errorLogRowFocus; showErrorLog = true }, showChevron = true,
+            modifier = Modifier.focusRequester(errorLogRowFocus),
+        )
 
         SectionDivider()
         GroupLabel("Network")
@@ -494,6 +503,7 @@ fun SettingsScreen(
                         SettingsRepository.CatchupTimezone.MANUAL -> utcOffsetLabel(catchupOffset)
                     }) { dialogReturn = searchFieldFocus; showCatchupTime = true },
                 SettingsSearchEntry("Playback", "Video Player Settings", "decoder subtitles sync", OwnTVIcon.VIDEO, TileTone.TERTIARY) { open(SettingsTab.VIDEO) },
+                SettingsSearchEntry("Playback", "Playback error log", "error crash failure diagnostics report", OwnTVIcon.HISTORY, TileTone.SECONDARY) { dialogReturn = searchFieldFocus; showErrorLog = true },
                 SettingsSearchEntry("Network", "Proxy", "http traffic route", OwnTVIcon.SHARE, TileTone.SECONDARY) { open(SettingsTab.NETWORK) },
                 SettingsSearchEntry("App", "App startup", "launch open landing", OwnTVIcon.HOME, TileTone.SECONDARY,
                     chip = startupMode.label) { dialogReturn = searchFieldFocus; showStartup = true },
@@ -587,6 +597,9 @@ fun SettingsScreen(
     if (showZoom) {
         ZoomDialog(current = uiZoomPercent, onSet = onSetZoom, onDismiss = { showZoom = false })
     }
+    if (showErrorLog) {
+        PlaybackErrorLogDialog(onDismiss = { showErrorLog = false })
+    }
     if (showFolderPicker) {
         StorageBrowser(
             title = "Choose the download folder",
@@ -628,11 +641,7 @@ private fun AccentPaletteDialog(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier
-                .width(640.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(colors.surfaceContainerHigh)
-                .padding(28.dp),
+            modifier = Modifier.dialogPanel(width = 640.dp, padding = 28.dp),
         ) {
             Text("Accent color", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
             Spacer(Modifier.height(16.dp))
@@ -752,7 +761,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.width(520.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(28.dp),
+            modifier = Modifier.dialogPanel(width = 520.dp, padding = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             BrandLockup(markSize = 48, textSize = 30)
@@ -805,6 +814,83 @@ private fun AboutDialog(onDismiss: () -> Unit) {
 }
 
 /**
+ * Read-only viewer for the persisted playback error history (B5): the last ~10 failures with their
+ * plain-English reason, media spec, raw engine text, engine, stream type and device info — so users
+ * who can't pull logcat can read/report what happened after dismissing the error screen.
+ */
+@Composable
+private fun PlaybackErrorLogDialog(onDismiss: () -> Unit) {
+    val colors = OwnTVTheme.colors
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var refresh by remember { mutableStateOf(0) }
+    val entries by androidx.compose.runtime.produceState<List<tv.own.owntv.player.PlaybackErrorLog.Entry>?>(initialValue = null, refresh) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            tv.own.owntv.player.PlaybackErrorLog.read(context)
+        }
+    }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(entries) { if (entries != null) runCatching { focus.requestFocus() } }
+    BackHandler { onDismiss() }
+    val timeFmt = remember { java.text.SimpleDateFormat("d MMM HH:mm", java.util.Locale.getDefault()) }
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.75f)).focusGroup(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(modifier = Modifier.dialogPanel(width = 640.dp, padding = 28.dp)) {
+            Text("Playback error log", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "The most recent playback failures (newest first). Include these details when reporting a problem.",
+                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(14.dp))
+            val list = entries
+            when {
+                list == null -> Text("Loading…", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+                list.isEmpty() -> Text("No playback errors recorded.", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+                else -> list.forEach { e ->
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                    ) {
+                        Text(
+                            "${timeFmt.format(java.util.Date(e.atMs))}  ·  ${e.engine}  ·  ${if (e.live) "Live" else "VOD"}",
+                            style = MaterialTheme.typography.labelMedium, color = colors.primary,
+                        )
+                        e.reason?.let {
+                            Spacer(Modifier.height(2.dp))
+                            Text(it, style = MaterialTheme.typography.titleSmall, color = colors.onSurface)
+                        }
+                        e.spec?.let {
+                            Spacer(Modifier.height(2.dp))
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                        }
+                        e.raw?.let {
+                            Spacer(Modifier.height(2.dp))
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text("${e.model} · ${e.android}", style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!entries.isNullOrEmpty()) {
+                    OwnTVButton("Clear log", onClick = {
+                        tv.own.owntv.player.PlaybackErrorLog.clear(context)
+                        refresh++
+                    }, style = OwnTVButtonStyle.SECONDARY)
+                }
+                Spacer(Modifier.weight(1f))
+                OwnTVButton("Close", onClick = onDismiss, modifier = Modifier.focusRequester(focus))
+            }
+        }
+    }
+}
+
+/**
  * Pick what watch history to clear: everything, or just Live TV / Movies / Series. Over a dimmed scrim;
  * Cancel is focused first so a stray OK doesn't wipe anything. [onClear] gets null for "all".
  */
@@ -824,7 +910,7 @@ private fun ClearHistoryDialog(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.width(460.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(28.dp),
+            modifier = Modifier.dialogPanel(width = 460.dp, padding = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val p = pending
@@ -876,7 +962,7 @@ private fun ZoomDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.width(460.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(28.dp),
+            modifier = Modifier.dialogPanel(width = 460.dp, padding = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text("UI Zoom", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
@@ -930,7 +1016,7 @@ private fun ZoomDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit
                 contentAlignment = Alignment.Center,
             ) {
                 Column(
-                    modifier = Modifier.width(460.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(28.dp),
+                    modifier = Modifier.dialogPanel(width = 460.dp, padding = 28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text("⚠️ Low zoom warning", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)
@@ -993,7 +1079,7 @@ private fun CatchupTimeDialog(
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.width(480.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(28.dp),
+            modifier = Modifier.dialogPanel(width = 480.dp, padding = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text("Catch-up time", style = MaterialTheme.typography.titleLarge, color = colors.onSurface)

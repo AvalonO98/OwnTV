@@ -40,6 +40,8 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.own.owntv.core.database.entity.EpgProgrammeEntity
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import tv.own.owntv.ui.components.FocusableSurface
 import tv.own.owntv.ui.components.OwnTVButton
 import tv.own.owntv.ui.components.OwnTVButtonStyle
@@ -156,7 +158,11 @@ internal fun ProgrammeDetailDialog(
     Popup(onDismissRequest = onDismiss, properties = PopupProperties(focusable = true)) {
         BackHandler { onDismiss() }
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.75f)), contentAlignment = Alignment.Center) {
-            Column(Modifier.widthIn(max = 560.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh).padding(28.dp)) {
+            // Scrollable: long XMLTV descriptions can exceed a small screen's height.
+            Column(
+                Modifier.widthIn(max = 560.dp).clip(RoundedCornerShape(20.dp)).background(colors.surfaceContainerHigh)
+                    .verticalScroll(rememberScrollState()).padding(28.dp),
+            ) {
                 Text(channelName.uppercase(), style = MaterialTheme.typography.labelMedium, color = colors.primary, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
                 Text(programme.title, style = MaterialTheme.typography.headlineSmall, color = colors.onSurface)
