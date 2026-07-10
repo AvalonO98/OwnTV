@@ -2,6 +2,17 @@
 
 ## v4.1.0 — Unreleased
 
+### 🐛 Fixes
+
+- **A–Z sorting now applies to categories too.** The sort chip in Live TV, Movies and Series only
+  reordered the items inside a folder — the category rail itself always stayed in provider order.
+  Switching the chip to **A–Z** now also sorts the category folders alphabetically (by their displayed
+  name, so renamed categories sort under their custom name), and the TV Guide's category picker follows
+  the Live TV setting the same way. Categories you manually reordered in **Settings → Customize**
+  stay pinned at the top in your custom order in every mode; the rest sort below them. **Provider**
+  (and **Rating**) modes keep the playlist order exactly as before. The fixed rail entries (All,
+  Favourites, Recent…) never move.
+
 ### 🔧 Under the hood
 
 - **Media3 (ExoPlayer) bumped 1.10.0 → 1.10.1.** ExoPlayer drives the image-subtitle (PGS/VOBSUB/DVB)

@@ -206,6 +206,8 @@ or **narrow the whole app to just one**.
   episode to see its TMDB still, plot and rating. Episode rows: **single-press plays**, **long-press** for
   Download / TMDB Details.
 - **Sorting:** the sort chip cycles **Provider → A–Z → Rating**. Rating shows the highest-rated titles first.
+  **A–Z also sorts the category folders** (in Live TV too) — categories you manually reordered in
+  **Settings → Customize** stay pinned at the top; the rest sort alphabetically below them.
 - **Refetch TMDB details:** long-press a movie, series, or episode → **Refetch TMDB details** forces a fresh
   TMDB search — it clears a wrong/stale match (or a 7-day "no match" cache) and re-searches at once, so you
   don't have to wait for the cache to expire. Use it when the art/plot is missing or looks wrong.

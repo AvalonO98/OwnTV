@@ -11,6 +11,10 @@
 
 ## v4.1.0 — Unreleased
 
+### 🐛 Fixes
+
+- **A–Z sorting now applies to categories too**
+
 ### 🔧 Under the hood
 
 - **ExoPlayer updated to 1.10.1**

@@ -219,8 +219,11 @@ class MovieViewModel(
             else combine(
                 categoryDao.observe(c.sourceIds, MediaType.MOVIE),
                 customize.observe(c.profileId, MediaType.MOVIE),
-            ) { cats, cust ->
-                defaultRail + cats.applyCustomizations(cust).map { (cat, name) ->
+                sortMode,
+            ) { cats, cust, sort ->
+                // A–Z also sorts the category folders; manually moved categories stay pinned first.
+                val folders = cats.applyCustomizations(cust, alphaRest = sort == SettingsRepository.SortMode.ALPHA)
+                defaultRail + folders.map { (cat, name) ->
                     LiveRailItem(LiveKey.Folder(cat.id), name.take(3).uppercase(), name)
                 }
             }

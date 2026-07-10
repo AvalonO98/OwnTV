@@ -204,8 +204,10 @@ class LiveViewModel(
     val railItems: StateFlow<List<LiveRailItem>> = ctx
         .flatMapLatest { c ->
             if (c.profileId < 0) flowOf(defaultRail)
-            else combine(categoryDao.observe(c.sourceIds, MediaType.LIVE), custom) { cats, cust ->
-                defaultRail + cats.applyCustomizations(cust).map { (cat, name) ->
+            else combine(categoryDao.observe(c.sourceIds, MediaType.LIVE), custom, sortMode) { cats, cust, sort ->
+                // A–Z also sorts the category folders; manually moved categories stay pinned first.
+                val folders = cats.applyCustomizations(cust, alphaRest = sort == SettingsRepository.SortMode.ALPHA)
+                defaultRail + folders.map { (cat, name) ->
                     LiveRailItem(LiveKey.Folder(cat.id), abbreviate(name), name)
                 }
             }
