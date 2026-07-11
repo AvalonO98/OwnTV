@@ -85,7 +85,7 @@ jobs:
           chmod +x ./gradlew
           if [ -n "$KEYSTORE_FILE" ]; then
             echo "Building signed release APK"
-            ./gradlew assembleRelease
+            ./gradlew assembleRelease --stacktrace
             SRC=$(ls app/build/outputs/apk/release/*.apk | head -n1)
           else
             echo "Building debug APK"
