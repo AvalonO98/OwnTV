@@ -9,16 +9,18 @@
 > (e.g. `(community PR #40 by @codeVerine)`). Issue numbers that are part of a title (e.g. `(#57)`) are
 > fine; explanatory parentheticals are not. Descriptions belong in CHANGELOG.md, never here.
 
-## v4.1.0 — Unreleased
+## v4.1.0 — 2026-07-11
 
 ### ✨ New features
 
 - **Playback error log in Settings**
+- **Custom TMDB names are now in Backup & Restore**
 - **Wider interface zoom range (50%–150%)**
 
 ### 🐛 Fixes
 
 - **Smaller app, faster cold start (R8)**
+- **Less UI work while browsing**
 - **Dialogs no longer get cut off on small screens**
 - **A–Z sorting now applies to categories too**
 - **Grids keep your place through background refreshes**
@@ -36,6 +38,7 @@
 ### 🔧 Under the hood
 
 - **ExoPlayer updated to 1.10.1**
+- **Koin, Coil & WorkManager updated**
 
 ## v4.0.3 — 2026-07-09
 

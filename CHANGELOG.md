@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.1.0 — Unreleased
+## v4.1.0 — 2026-07-11
 
 ### ✨ New features
 
@@ -9,6 +9,13 @@
   engine (mpv/ExoPlayer), Live/VOD, and your device model/Android version. Open **Settings →
   Playback → Playback error log** to read (or clear) them, so you can report exactly what happened
   even after dismissing the error screen or restarting the app — no adb/logcat needed.
+- **Custom TMDB names are now in Backup & Restore.** Titles/years you hand-corrected via long-press →
+  **Custom TMDB name** (for providers with weird item names) now ride in the backup's Customizations
+  section and are merged back on restore — any stale cached match for a restored key is dropped so the
+  corrected name re-fetches. Two more backup upgrades ride along: your own **TMDB API key** is now
+  included when (and only when) the backup is password-encrypted (same policy as source/proxy
+  passwords), and **recent searches** are backed up with settings. Older backup files still restore
+  fine; older app versions simply ignore the new blocks.
 - **Wider interface zoom range.** **Settings → Interface zoom** now goes from **50% to 150%**
   (previously 65%–140%), for tighter grids on big screens or larger UI on small/far ones. The
   existing low-memory warning below 85% still applies.
@@ -61,6 +68,10 @@
   longer de-duplicates the (huge) cached TV guide row-by-row — it clears the rebuildable guide cache
   instead, so the first launch after a big version jump is instant. The guide re-downloads on your
   next EPG sync. (Upgrades from any 4.x version are unaffected.)
+- **Less UI work while browsing.** The most-passed-around UI models (channels, movies, series,
+  home-screen state, EPG now/next, search results, weather, details panes) are now marked immutable
+  for Compose, so screens can skip re-rendering unchanged parts instead of redrawing whole subtrees
+  on every state tick.
 - **TMDB caches no longer grow forever.** Metadata cached for items you haven't opened in 90 days is
   cleaned up after each playlist sync and simply re-fetches if you come back to them.
 
@@ -90,6 +101,13 @@
   `OwnTV-dev-<sha>.apk` artifact (previously debug), versioned `99.99.99` so it installs straight
   over any published release for testing. Publishing a GitHub Release still only happens on `v*`
   tags. Fork PRs (no signing secrets) still build debug.
+- **Player timing constants named.** The ~15 bare `delay()` literals in the playback engine
+  (decoder-release waits on mpv↔ExoPlayer handoffs, live-reconnect pause, surround/decode
+  verification windows, retry beats) are now named companion constants documented in one place —
+  no behavior change.
+- **Dependency updates.** Koin 4.1.1 → 4.2.2, Coil 3.3.0 → 3.5.0, WorkManager 2.10.0 → 2.11.2.
+  (core-ktx/lifecycle/Compose BOM stay put — their latest versions require compileSdk 37; OkHttp 5
+  is deferred as its own change.)
 - **Sync engine de-duplicated.** The three near-identical Xtream phase implementations
   (Live/Movies/Series: fresh-vs-stable upsert, per-category 512 fallback, prune) are now one generic
   phase parameterized per content type, so future fixes to the sync logic land once instead of three

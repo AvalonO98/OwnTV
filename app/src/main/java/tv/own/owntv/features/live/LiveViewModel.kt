@@ -3,6 +3,7 @@
 package tv.own.owntv.features.live
 
 import android.content.Context
+import androidx.compose.runtime.Immutable
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -75,9 +76,11 @@ sealed interface LiveKey {
 }
 
 /** A rail entry. Favorites/History carry an [icon] (rendered instead of the abbreviation). */
+@Immutable
 data class LiveRailItem(val key: LiveKey, val abbr: String, val title: String, val icon: OwnTVIcon? = null)
 
 /** Now-playing + up-next EPG for the focused channel (null entries when the guide is unavailable). */
+@Immutable
 data class EpgNowNext(val now: XtEpgEntry?, val next: XtEpgEntry?, val upcoming: List<XtEpgEntry> = emptyList())
 
 class LiveViewModel(

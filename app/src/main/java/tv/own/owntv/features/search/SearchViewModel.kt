@@ -3,6 +3,7 @@
 package tv.own.owntv.features.search
 
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -44,6 +45,7 @@ import tv.own.owntv.features.settings.data.SettingsRepository
 import tv.own.owntv.player.OwnTVPlayer
 
 /** Combined results of a global query (each list bounded). */
+@Immutable
 data class SearchResults(
     val channels: List<tv.own.owntv.core.database.dao.ChannelSearchResult> = emptyList(),
     val movies: List<MovieEntity> = emptyList(),

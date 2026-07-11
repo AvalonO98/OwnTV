@@ -1,5 +1,7 @@
 package tv.own.owntv.ui.components
 
+import androidx.compose.runtime.Immutable
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +27,7 @@ import tv.own.owntv.core.model.DownloadStatus
 import tv.own.owntv.ui.theme.OwnTVTheme
 
 /** Display-only download state for the poster-panel strip (no actions — mirrors the Downloads screen). */
+@Immutable
 data class DownloadStripState(
     val label: String,
     /** 0f..1f when a size is known; null = indeterminate (queued / unknown total). */

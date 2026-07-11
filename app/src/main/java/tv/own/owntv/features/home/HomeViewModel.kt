@@ -1,5 +1,7 @@
 package tv.own.owntv.features.home
 
+import androidx.compose.runtime.Immutable
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -95,12 +97,14 @@ sealed interface HeroItem {
     }
 }
 
+@Immutable
 data class HomeHeroMetadata(
     val backdropUrl: String? = null,
     val logoUrl: String? = null,
     val plot: String? = null,
 )
 
+@Immutable
 data class HomeUiState(
     val heroItems: List<HeroItem> = emptyList(),
     val activeHeroIndex: Int = 0,
@@ -124,6 +128,7 @@ data class HomeUiState(
     val isLoading: Boolean = true,
 )
 
+@Immutable
 data class GuideSliceState(
     val channels: List<ChannelEntity> = emptyList(),
     val programmes: Map<Long, List<EpgProgrammeEntity>> = emptyMap(),
@@ -139,6 +144,7 @@ data class GuideSliceState(
 enum class ContinueKind { LIVE, MOVIE, EPISODE }
 
 /** A single resumable target: what to play and how to label it. */
+@Immutable
 data class ContinueTarget(
     val kind: ContinueKind,
     /** Display name (movie/series/channel). */
