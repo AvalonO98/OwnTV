@@ -14,9 +14,11 @@
 ### ✨ New features
 
 - **Playback error log in Settings**
+- **Wider interface zoom range (50%–150%)**
 
 ### 🐛 Fixes
 
+- **Smaller app, faster cold start (R8)**
 - **Dialogs no longer get cut off on small screens**
 - **A–Z sorting now applies to categories too**
 - **Grids keep your place through background refreshes**

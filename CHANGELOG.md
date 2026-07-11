@@ -9,9 +9,17 @@
   engine (mpv/ExoPlayer), Live/VOD, and your device model/Android version. Open **Settings →
   Playback → Playback error log** to read (or clear) them, so you can report exactly what happened
   even after dismissing the error screen or restarting the app — no adb/logcat needed.
+- **Wider interface zoom range.** **Settings → Interface zoom** now goes from **50% to 150%**
+  (previously 65%–140%), for tighter grids on big screens or larger UI on small/far ones. The
+  existing low-memory warning below 85% still applies.
 
 ### ⚡ Performance & reliability
 
+- **Smaller app, faster cold start (R8).** Release builds are now shrunk and optimized by R8 —
+  dead code is stripped and the remaining code is optimized, so there's less to load on
+  low-end TV boxes. Baseline profiles bundled by the UI/player libraries are now actually
+  installed on sideloaded installs (via ProfileInstaller), pre-compiling the hot startup and
+  scrolling paths instead of leaving them to the JIT on first run.
 - **Faster playlist import on huge playlists.** The M3U parser now extracts all `#EXTINF` attributes
   in a single scan of each line (previously ~10 separate searches per channel), and the detailed
   per-item timing instrumentation in both the M3U and Xtream parsers is now off unless explicitly
@@ -78,6 +86,10 @@
 
 ### 🔧 Under the hood
 
+- **CI dev builds are now release builds.** Every push now produces a release-signed, R8-shrunk
+  `OwnTV-dev-<sha>.apk` artifact (previously debug), versioned `99.99.99` so it installs straight
+  over any published release for testing. Publishing a GitHub Release still only happens on `v*`
+  tags. Fork PRs (no signing secrets) still build debug.
 - **Sync engine de-duplicated.** The three near-identical Xtream phase implementations
   (Live/Movies/Series: fresh-vs-stable upsert, per-category 512 fallback, prune) are now one generic
   phase parameterized per content type, so future fixes to the sync logic land once instead of three
