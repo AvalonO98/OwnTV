@@ -48,14 +48,36 @@ jobs:
           echo "name=zh-$TS-$SHORT" >> $GITHUB_OUTPUT
           echo "code=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
 
+      - name: 解码签名密钥（如有）
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            echo "已配置 release 签名"
+          else
+            echo "未配置签名密钥，将构建 debug APK（可安装）"
+          fi
+
       - name: 构建 APK
         env:
           VERSION_NAME: ${{ steps.ver.outputs.name }}
           VERSION_CODE: ${{ steps.ver.outputs.code }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease --stacktrace --no-daemon
-          APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          if [ -n "$KEYSTORE_FILE" ]; then
+            echo "构建签名 release APK"
+            ./gradlew assembleRelease --stacktrace --no-daemon
+            APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n1)
+          else
+            echo "构建 debug APK（已签名，可直接安装）"
+            ./gradlew assembleDebug --stacktrace --no-daemon
+            APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -n1)
+          fi
           OUT="OwnTV-zh-${{ steps.ver.outputs.name }}.apk"
           cp "$APK" "$OUT"
           echo "apk=$OUT" >> $GITHUB_ENV
