@@ -91,6 +91,6 @@ jobs:
         with:
           name: "OwnTV 汉化版 v${{ steps.ver.outputs.name }}"
           tag_name: "v${{ steps.ver.outputs.name }}"
-          generate_release_notes: true
+          body: "基于上游 ${{ steps.ver.outputs.name }} 的简体中文汉化版本。"
           files: ${{ env.apk }}
           prerelease: false

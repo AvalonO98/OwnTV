@@ -1,4 +1,4 @@
-package tv.own.owntv.features.epg
+﻿package tv.own.owntv.features.epg
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -324,7 +324,7 @@ fun EpgScreen(
                 Text("No EPG added.", style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Add an EPG (XMLTV) source to fill the guide with programmes.",
+                    "添加 EPG (XMLTV) 源以填充节目指南。",
                     style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(20.dp))
@@ -512,7 +512,7 @@ private fun EpgMatchReviewDialog(
                             shape = RoundedCornerShape(10.dp),
                             unfocusedContainerColor = colors.surfaceContainerHigh,
                             contentAlignment = Alignment.Center,
-                        ) { _ -> Text("Skip", style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) }
+                        ) { _ -> Text("跳过", style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) }
                     }
                 }
             }
@@ -521,7 +521,7 @@ private fun EpgMatchReviewDialog(
                 // Bulk actions only make sense for a multi-channel run; a single auto-match shows just accept/skip.
                 if (suggestions.size > 1) {
                     OwnTVButton("Accept all", onClick = onAcceptAll, icon = OwnTVIcon.PLAY)
-                    OwnTVButton("Skip all", onClick = onSkipAll, style = OwnTVButtonStyle.SECONDARY)
+                    OwnTVButton("全部跳过", onClick = onSkipAll, style = OwnTVButtonStyle.SECONDARY)
                 }
                 Spacer(Modifier.weight(1f))
                 OwnTVButton("Done", onClick = onDone, style = OwnTVButtonStyle.SECONDARY)

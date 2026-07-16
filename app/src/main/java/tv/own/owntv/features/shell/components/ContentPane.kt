@@ -63,7 +63,7 @@ fun ContentPane(
                 icon = emptyIcon,
                 title = "Nothing here yet",
                 message = emptyMessage,
-                actionLabel = "Add a source",
+                actionLabel = "添加播放源",
                 onAction = onAddSource,
             )
         }

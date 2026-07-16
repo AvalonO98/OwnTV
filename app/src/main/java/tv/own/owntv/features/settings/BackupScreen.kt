@@ -1,4 +1,4 @@
-package tv.own.owntv.features.settings
+﻿package tv.own.owntv.features.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -205,7 +205,7 @@ fun BackupScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 "This backup's passwords are encrypted. Enter the backup password to restore them, or skip " +
                     "to restore everything else and re-enter passwords later.",
             confirmLabel = "Restore",
-            skipLabel = "Skip (no passwords)",
+            skipLabel = "跳过（不含密码）",
             onConfirm = { pass -> vm.import(need.file, need.sections, pass) },
             onSkip = { vm.import(need.file, need.sections, null) },
             onDismiss = { vm.reset() },

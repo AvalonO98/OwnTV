@@ -1,4 +1,4 @@
-package tv.own.owntv.features.home
+﻿package tv.own.owntv.features.home
 
 import androidx.compose.runtime.Immutable
 
@@ -149,7 +149,7 @@ data class ContinueTarget(
     val kind: ContinueKind,
     /** Display name (movie/series/channel). */
     val name: String,
-    /** Short action word: "Resume" / "Next up" / "Last channel" / "Play". */
+    /** Short action word: "Resume" / "Next up" / "上次频道" / "播放". */
     val actionLabel: String,
     val channelId: Long = -1L,
     val movieId: Long = -1L,
@@ -196,16 +196,16 @@ class HomeViewModel(
     ): ContinueTarget? = when (h.mediaType) {
         MediaType.MOVIE -> movieDao.getById(h.itemId)?.let { m ->
             val pos = progressDao.get(pid, MediaType.MOVIE, m.id)?.positionMs ?: 0L
-            ContinueTarget(ContinueKind.MOVIE, m.name, if (pos > 0) "Resume" else "Play", movieId = m.id, positionMs = pos)
+            ContinueTarget(ContinueKind.MOVIE, m.name, if (pos > 0) "Resume" else "播放", movieId = m.id, positionMs = pos)
         }
         MediaType.EPISODE -> seriesDao.getEpisodeById(h.itemId)?.let { ep ->
             seriesDao.getSeriesById(ep.seriesId)?.let { s ->
                 val pos = progressDao.get(pid, MediaType.EPISODE, ep.id)?.positionMs ?: 0L
-                ContinueTarget(ContinueKind.EPISODE, s.name, if (pos > 0) "Resume" else "Next up", seriesId = ep.seriesId, episodeId = ep.id, positionMs = pos)
+                ContinueTarget(ContinueKind.EPISODE, s.name, if (pos > 0) "继续" else "下一集", seriesId = ep.seriesId, episodeId = ep.id, positionMs = pos)
             }
         }
         MediaType.LIVE -> channelDao.getById(h.itemId)?.let { c ->
-            ContinueTarget(ContinueKind.LIVE, c.name, "Last channel", channelId = c.id)
+            ContinueTarget(ContinueKind.LIVE, c.name, "上次频道", channelId = c.id)
         }
         else -> null
     }

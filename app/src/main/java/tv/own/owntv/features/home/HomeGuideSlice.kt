@@ -1,4 +1,4 @@
-package tv.own.owntv.features.home
+﻿package tv.own.owntv.features.home
 
 import android.text.format.DateFormat
 import coil3.compose.AsyncImage
@@ -385,7 +385,7 @@ private fun OnNowChannelItem(
                     verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        text = "Next",
+                        text = "下一集",
                         style = MaterialTheme.typography.labelSmall,
                         color = colors.onSurfaceVariant.copy(alpha = 0.52f),
                         fontWeight = FontWeight.SemiBold,

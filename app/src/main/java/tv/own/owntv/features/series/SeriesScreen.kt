@@ -1,4 +1,4 @@
-package tv.own.owntv.features.series
+﻿package tv.own.owntv.features.series
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -652,14 +652,14 @@ private fun EpisodeDetailPane(
             tv.own.owntv.ui.components.DownloadStatusStrip(downloadStrip)
             Spacer(Modifier.height(14.dp))
         }
-        // "Next up" Play card — the series' resume/continue target. Hidden when there's no next-up (all
+        // "下一集" Play card — the series' resume/continue target. Hidden when there's no next-up (all
         // caught up) or when it's the same episode already focused (OK plays it anyway).
         nextUpEpisode?.takeIf { it.id != episode.id }?.let { nup ->
             Column(
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                     .background(colors.primaryContainer.copy(alpha = 0.22f)).padding(12.dp),
             ) {
-                Text("Next up", style = MaterialTheme.typography.labelSmall, color = colors.primary)
+                Text("下一集", style = MaterialTheme.typography.labelSmall, color = colors.primary)
                 Spacer(Modifier.height(4.dp))
                 Text("S${nup.seasonNumber} · E${nup.episodeNumber}  ${nup.name}", style = MaterialTheme.typography.titleMedium, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (nextUpPositionMs > 0) {

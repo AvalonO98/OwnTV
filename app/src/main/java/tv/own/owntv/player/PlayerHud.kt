@@ -1,4 +1,4 @@
-package tv.own.owntv.player
+﻿package tv.own.owntv.player
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -572,7 +572,7 @@ private fun NextEpisodeCard(
             .padding(horizontal = 18.dp, vertical = 14.dp),
     ) {
         Text(
-            "Next episode in ${seconds}s",
+            "${seconds}秒后播放下一集",
             style = MaterialTheme.typography.labelLarge,
             color = colors.primary,
             fontWeight = FontWeight.Bold,
