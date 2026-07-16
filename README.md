@@ -34,6 +34,14 @@ OwnTV 是一款原生的 Android TV IPTV 播放器，基于 Kotlin + Jetpack Com
 | 退出/提示 | 退出确认、离线提示、缩放警告、回看时间 |
 | 技术术语 | HDR、PIN、M3U、Xtream、XMLTV 等保持原样 |
 
+## 版本号
+
+版本号跟随上游原仓库，格式为 `原版本号-zh`。例如上游发布 `v4.1.2` → 汉化版为 `v4.1.2-zh`。
+
+## 自动同步上游更新
+
+每天自动检查 [ahXN00/OwnTV](https://github.com/ahXN00/OwnTV) 是否有新版本。发现更新后自动合并并编译新 APK，无需手动干预。
+
 ## 自动编译
 
 每次推送代码后，GitHub Actions 自动编译 APK，可在 [Releases](https://github.com/AvalonO98/OwnTV/releases) 页面下载安装。

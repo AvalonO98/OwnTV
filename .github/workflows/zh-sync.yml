@@ -1,0 +1,72 @@
+name: 同步上游更新
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 每天 UTC 0:00 检查一次
+  workflow_dispatch:       # 手动触发
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 Git
+        run: |
+          git config user.name "汉化同步机器人"
+          git config user.email "zh-sync@github.com"
+
+      - name: 添加上游仓库
+        run: |
+          git remote add upstream https://github.com/ahXN00/OwnTV.git 2>/dev/null || true
+          git fetch upstream --tags
+
+      - name: 检查上游更新
+        id: check
+        run: |
+          # 获取上游最新 tag
+          UPSTREAM_TAG=$(git tag -l "v*" --sort=-v:refname | head -n1)
+          echo "上游最新版本: $UPSTREAM_TAG"
+
+          # 检查本地是否已有此 tag
+          if git rev-parse "$UPSTREAM_TAG" >/dev/null 2>&1; then
+            # tag 已存在，检查是否有新提交
+            LOCAL=$(git rev-parse HEAD)
+            UPSTREAM=$(git rev-parse upstream/main)
+            if [ "$LOCAL" = "$UPSTREAM" ]; then
+              echo "已是最新，无需同步"
+              echo "changed=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "发现新提交，开始同步"
+          else
+            echo "发现新版本: $UPSTREAM_TAG"
+          fi
+
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "tag=$UPSTREAM_TAG" >> $GITHUB_OUTPUT
+
+      - name: 合并上游更新
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          # 合并上游 main 分支
+          git merge upstream/main --no-edit -m "同步上游 ${{ steps.check.outputs.tag }}" || {
+            echo "合并冲突，尝试用 ours 策略处理汉化文件"
+            # 对汉化相关的 Kotlin 文件用 ours 策略（保留汉化版）
+            git checkout --ours -- app/src/main/java/tv/own/owntv/features/
+            git add app/src/main/java/tv/own/owntv/features/
+            git commit --no-edit --allow-empty
+          }
+          echo "同步完成"
+
+      - name: 推送
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git push origin main
+          echo "已推送，将触发汉化编译"
